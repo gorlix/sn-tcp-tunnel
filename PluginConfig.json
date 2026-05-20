@@ -1,0 +1,10 @@
+{
+  "name": "snTCPTunnel",
+  "desc": "",
+  "iconPath": "",
+  "versionName": "0.0.1",
+  "versionCode": "1",
+  "pluginID": "53bvhixp038hu67m",
+  "pluginKey": "snTCPTunnel",
+  "jsMainPath": "index"
+}

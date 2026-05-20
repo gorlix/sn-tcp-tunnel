@@ -1,97 +1,113 @@
-This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
+# sn-TCP-Tunnel
 
-# Getting Started
+View your Supernote's screen on your PC over USB — no WiFi needed.
 
-> **Note**: Make sure you have completed the [Set Up Your Environment](https://reactnative.dev/docs/set-up-your-environment) guide before proceeding.
+Supernote has a built-in screen sharing feature, but it only works over WiFi.
+This plugin bridges the gap: it forwards the screen sharing stream through the USB cable you already have plugged in.
 
-## Step 1: Start Metro
+---
 
-First, you will need to run **Metro**, the JavaScript build tool for React Native.
+## How it works
 
-To start the Metro dev server, run the following command from the root of your React Native project:
+1. You plug the Supernote into your PC via USB
+2. Tap the **TCP Tunnel** button on the Supernote
+3. Run one command on your PC (`adb forward`)
+4. Open a browser and see your Supernote screen live
 
-```sh
-# Using npm
-npm start
+The plugin acts as a relay: it picks up the screen sharing stream from inside the device and sends it over USB to your PC.
 
-# OR using Yarn
-yarn start
+---
+
+## What you need
+
+- A Supernote A5X or A6X with **PluginHost** installed
+- A PC with **ADB** installed ([download here](https://developer.android.com/tools/releases/platform-tools))
+- A USB cable
+
+That's it — no WiFi, no Android Studio, no extra software.
+
+---
+
+## Install the plugin
+
+1. Go to [Releases](../../releases) and download the latest `plugin.snplg`
+2. Copy it to your Supernote (USB or WiFi transfer)
+3. On the Supernote, open **PluginHost** → **Install Plugin** → select the file
+4. Two new buttons appear in the toolbar: **TCP Tunnel** and **Tunnel Config**
+
+---
+
+## Use it
+
+**Every time you want to view the screen:**
+
+1. Plug Supernote into your PC via USB
+2. Tap **TCP Tunnel** on the Supernote — the icon becomes solid (relay is active)
+3. On your PC, run:
+
+   ```sh
+   adb forward tcp:8080 tcp:8888
+   ```
+
+4. Open `http://localhost:8080` in your browser
+
+To stop: tap the button again, or just unplug the cable.
+
+---
+
+## Change the target host or port
+
+The default configuration points to `100.113.43.44:8080` (the Supernote screen sharing address on Tailscale).
+If your setup is different:
+
+1. Tap **Tunnel Config** in the toolbar
+2. Enter the target host and port
+3. Tap **Save**
+
+The screen also shows your device's current WiFi IP for reference.
+
+---
+
+## Build from source
+
+<details>
+<summary>Prerequisites</summary>
+
+- Node.js 18+
+- JDK 21
+
+```bash
+# Arch Linux
+sudo pacman -S jdk21-openjdk
+export JAVA_HOME=/usr/lib/jvm/java-21-openjdk
+
+# Android command-line tools (no Android Studio needed)
+# Download from https://developer.android.com/studio#command-tools
+# Then install SDK Platform 35 + Build-Tools 35.0.0:
+sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+export ANDROID_HOME=$HOME/Android/Sdk
+export PATH=$PATH:$ANDROID_HOME/platform-tools
 ```
 
-## Step 2: Build and run your app
+</details>
 
-With Metro running, open a new terminal window/pane from the root of your React Native project, and use one of the following commands to build and run your Android or iOS app:
-
-### Android
-
-```sh
-# Using npm
-npm run android
-
-# OR using Yarn
-yarn android
+```bash
+npm install
+chmod +x buildPlugin.sh && ./buildPlugin.sh
+# Output: build/outputs/plugin.snplg
 ```
 
-### iOS
+To publish a release, push a version tag:
 
-For iOS, remember to install CocoaPods dependencies (this only needs to be run on first clone or after updating native deps).
-
-The first time you create a new project, run the Ruby bundler to install CocoaPods itself:
-
-```sh
-bundle install
+```bash
+git tag v1.0.0 && git push origin v1.0.0
 ```
 
-Then, and every time you update your native dependencies, run:
+GitHub Actions builds the plugin and attaches it to the release automatically.
 
-```sh
-bundle exec pod install
-```
+---
 
-For more information, please visit [CocoaPods Getting Started guide](https://guides.cocoapods.org/using/getting-started.html).
+## License
 
-```sh
-# Using npm
-npm run ios
-
-# OR using Yarn
-yarn ios
-```
-
-If everything is set up correctly, you should see your new app running in the Android Emulator, iOS Simulator, or your connected device.
-
-This is one way to run your app — you can also build it directly from Android Studio or Xcode.
-
-## Step 3: Modify your app
-
-Now that you have successfully run the app, let's make changes!
-
-Open `App.tsx` in your text editor of choice and make some changes. When you save, your app will automatically update and reflect these changes — this is powered by [Fast Refresh](https://reactnative.dev/docs/fast-refresh).
-
-When you want to forcefully reload, for example to reset the state of your app, you can perform a full reload:
-
-- **Android**: Press the <kbd>R</kbd> key twice or select **"Reload"** from the **Dev Menu**, accessed via <kbd>Ctrl</kbd> + <kbd>M</kbd> (Windows/Linux) or <kbd>Cmd ⌘</kbd> + <kbd>M</kbd> (macOS).
-- **iOS**: Press <kbd>R</kbd> in iOS Simulator.
-
-## Congratulations! :tada:
-
-You've successfully run and modified your React Native App. :partying_face:
-
-### Now what?
-
-- If you want to add this new React Native code to an existing application, check out the [Integration guide](https://reactnative.dev/docs/integration-with-existing-apps).
-- If you're curious to learn more about React Native, check out the [docs](https://reactnative.dev/docs/getting-started).
-
-# Troubleshooting
-
-If you're having issues getting the above steps to work, see the [Troubleshooting](https://reactnative.dev/docs/troubleshooting) page.
-
-# Learn More
-
-To learn more about React Native, take a look at the following resources:
-
-- [React Native Website](https://reactnative.dev) - learn more about React Native.
-- [Getting Started](https://reactnative.dev/docs/environment-setup) - an **overview** of React Native and how setup your environment.
-- [Learn the Basics](https://reactnative.dev/docs/getting-started) - a **guided tour** of the React Native **basics**.
-- [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
-- [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.
+MIT
