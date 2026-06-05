@@ -28,8 +28,14 @@ import {
   View,
 } from 'react-native';
 import {PluginManager} from 'sn-plugin-lib';
+import {isValidPort} from './src/validation';
 
 const {TcpTunnelModule} = NativeModules;
+
+function log(tag: string, msg: string) {
+  const line = `[${new Date().toISOString()}] [App/${tag}] ${msg}`;
+  TcpTunnelModule.writeLog(line).catch(() => {});
+}
 
 /**
  * Root component for the plugin configuration view.
@@ -58,11 +64,25 @@ export default function App(): React.JSX.Element {
    * (the tunnel still works over USB regardless of WiFi state).
    */
   useEffect(() => {
-    TcpTunnelModule.loadConfig().then((cfg: {host: string; port: number}) => {
-      setHost(cfg.host);
-      setPort(String(cfg.port));
-    });
-    TcpTunnelModule.getWifiIP().then(setWifiIP).catch(() => {});
+    log('mount', 'Config view mounted — loading config and WiFi IP');
+    TcpTunnelModule.loadConfig()
+      .then((cfg: {host: string; port: number}) => {
+        log('mount', `Config loaded: host=${cfg.host} port=${cfg.port}`);
+        setHost(cfg.host);
+        setPort(String(cfg.port));
+      })
+      .catch((e: unknown) => {
+        log('mount', `loadConfig FAILED: ${String(e)}`);
+        Alert.alert('Error', 'Failed to load configuration.');
+      });
+    TcpTunnelModule.getWifiIP()
+      .then((ip: string) => {
+        log('mount', `WiFi IP: ${ip}`);
+        setWifiIP(ip);
+      })
+      .catch(() => {
+        log('mount', 'getWifiIP failed (device may not be on WiFi)');
+      });
   }, []);
 
   /**
@@ -74,14 +94,29 @@ export default function App(): React.JSX.Element {
    * providing a reachable address (hostname or dotted-decimal IP).
    */
   function handleSave() {
+    const trimmedHost = host.trim();
+    log('save', `handleSave called: host="${trimmedHost}" port="${port}"`);
+    if (!trimmedHost) {
+      log('save', 'Validation FAILED: host is empty');
+      Alert.alert('Invalid host', 'Host cannot be empty.');
+      return;
+    }
     const portNum = parseInt(port, 10);
-    if (isNaN(portNum) || portNum <= 0 || portNum > 65535) {
+    if (!isValidPort(portNum)) {
+      log('save', `Validation FAILED: port "${port}" → ${portNum} is not in 1–65535`);
       Alert.alert('Invalid port', 'Port must be 1–65535.');
       return;
     }
-    TcpTunnelModule.saveConfig(host.trim(), portNum).then(() => {
-      PluginManager.closePluginView();
-    });
+    log('save', `Validation OK — calling saveConfig: host=${trimmedHost} port=${portNum}`);
+    TcpTunnelModule.saveConfig(trimmedHost, portNum)
+      .then(() => {
+        log('save', 'saveConfig SUCCESS — closing config view');
+        PluginManager.closePluginView();
+      })
+      .catch((e: unknown) => {
+        log('save', `saveConfig FAILED: ${String(e)}`);
+        Alert.alert('Error', 'Failed to save configuration.');
+      });
   }
 
   return (
