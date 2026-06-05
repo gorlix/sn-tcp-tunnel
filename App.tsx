@@ -95,22 +95,45 @@ export default function App(): React.JSX.Element {
   const [listenPort, setListenPort] = useState(DEFAULT_LISTEN_PORT);
   const banner = useBanner();
 
-  useEffect(() => {
-    log('mount', `screen=${initialScreen}`);
+  function loadState() {
     Promise.all([
       TcpTunnelModule.isRunning(),
       TcpTunnelModule.loadConfig(),
     ]).then(([r, cfg]: [boolean, {host: string; port: number; listenPort: number}]) => {
-      log('mount', `isRunning=${r} host=${cfg.host} port=${cfg.port} listenPort=${cfg.listenPort}`);
+      log('state', `isRunning=${r} host=${cfg.host} port=${cfg.port} listenPort=${cfg.listenPort}`);
       setRunning(r);
       setHost(cfg.host);
       setPort(String(cfg.port));
-      setListenPort(String(cfg.listenPort ?? 7890));
-    }).catch((e: unknown) => log('mount', `init failed: ${String(e)}`));
-  }, [initialScreen]);
+      setListenPort(String(cfg.listenPort ?? 8888));
+    }).catch((e: unknown) => log('state', `load failed: ${String(e)}`));
+  }
+
+  // Load state once on first mount.
+  useEffect(() => {
+    log('mount', `initial screen=${initialScreen}`);
+    loadState();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Reset screen to the correct mode every time the plugin view becomes visible.
+  // The App component stays mounted between opens in the PluginHost; without this
+  // listener, the screen state from the previous open would persist.
+  useEffect(() => {
+    const sub = PluginManager.addPluginLifeListener({
+      onStart: () => {
+        const mode = getViewMode();
+        log('lifecycle', `onStart — screen → ${mode}`);
+        setScreen(mode);
+        loadState();
+      },
+      onStop: () => log('lifecycle', 'onStop'),
+    });
+    return () => sub.remove();
+
+  }, []);
 
   async function startTunnel(portNum: number) {
-    const lp = parseInt(listenPort, 10) || 7890;
+    const lp = parseInt(listenPort, 10) || 8888;
     await TcpTunnelModule.startTunnel(host.trim(), portNum, lp);
     setRunning(true);
     PluginManager.unregisterButton(100);
