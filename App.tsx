@@ -18,7 +18,6 @@ import {
   Image,
   NativeModules,
   StyleSheet,
-  Switch,
   Text,
   TextInput,
   TouchableOpacity,
@@ -411,18 +410,19 @@ function SettingsScreen({s, host, port, listenPort, autoHost, onHostChange, onPo
 
         <View style={styles.divider} />
 
-        {/* Auto-host toggle */}
+        {/* Auto-host toggle — custom (Switch not reliable on Supernote e-ink) */}
         <View style={styles.toggleRow}>
           <View style={styles.toggleLabelCol}>
             <Text style={styles.fieldLabel}>{s.autoHostLabel}</Text>
             <Text style={styles.fieldHint}>{s.autoHostHint}</Text>
           </View>
-          <Switch
-            value={autoHost}
-            onValueChange={onAutoHostChange}
-            thumbColor="#fff"
-            trackColor={{false: '#ccc', true: '#000'}}
-          />
+          <TouchableOpacity
+            style={[styles.toggleBtn, autoHost && styles.toggleBtnOn]}
+            onPress={() => onAutoHostChange(!autoHost)}>
+            <Text style={[styles.toggleBtnText, autoHost && styles.toggleBtnTextOn]}>
+              {autoHost ? 'ON' : 'OFF'}
+            </Text>
+          </TouchableOpacity>
         </View>
 
         {/* Manual host — visible only when auto-host is OFF */}
@@ -487,7 +487,7 @@ const styles = StyleSheet.create({
   },
   bannerText: {color: '#fff', fontSize: 14, fontWeight: '600'},
 
-  screen: {flex: 1},
+  screen: {flex: 1, backgroundColor: '#fff'},
 
   header: {
     flexDirection: 'row',
@@ -586,6 +586,18 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   toggleLabelCol: {flex: 1, marginRight: 12},
+  toggleBtn: {
+    width: 64,
+    height: 32,
+    borderWidth: 1,
+    borderColor: '#000',
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  toggleBtnOn: {backgroundColor: '#000'},
+  toggleBtnText: {fontSize: 12, fontWeight: '700', color: '#000'},
+  toggleBtnTextOn: {color: '#fff'},
   fieldLabel: {fontSize: 13, color: '#555', marginBottom: 4, fontWeight: '600'},
   fieldHint: {fontSize: 11, color: '#888', marginBottom: 8, fontFamily: 'monospace'},
   input: {
