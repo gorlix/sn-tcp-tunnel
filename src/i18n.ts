@@ -32,6 +32,8 @@ export interface Strings {
   hintOr: string;
   hintSuf: string;
   // Settings fields
+  autoHostLabel: string;
+  autoHostHint: string;
   presetLabel: string;
   hostLabel: string;
   targetPortLabel: string;
@@ -72,6 +74,8 @@ const translations: Record<Locale, Strings> = {
     hintPre: 'Prima di avviare, attiva',
     hintOr: 'o',
     hintSuf: 'dalla barra toggle in alto.',
+    autoHostLabel: 'IP automatico',
+    autoHostHint: 'Usa l\'IP WiFi del dispositivo rilevato automaticamente',
     presetLabel: 'Preset porta',
     hostLabel: 'Host destinazione',
     targetPortLabel: 'Porta destinazione (target)',
@@ -109,6 +113,8 @@ const translations: Record<Locale, Strings> = {
     hintPre: 'Before starting, enable',
     hintOr: 'or',
     hintSuf: 'from the toggle bar at the top.',
+    autoHostLabel: 'Auto IP',
+    autoHostHint: 'Use the device WiFi IP detected automatically',
     presetLabel: 'Port preset',
     hostLabel: 'Target host',
     targetPortLabel: 'Target port',

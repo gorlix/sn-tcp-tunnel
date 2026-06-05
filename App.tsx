@@ -18,6 +18,7 @@ import {
   Image,
   NativeModules,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   TouchableOpacity,
@@ -105,6 +106,7 @@ export default function App(): React.JSX.Element {
   const [host, setHost] = useState('');
   const [port, setPort] = useState('');
   const [listenPort, setListenPort] = useState(DEFAULT_LISTEN_PORT);
+  const [autoHost, setAutoHost] = useState(true);
   const banner = useBanner();
 
   const s: Strings = getStrings(locale);
@@ -113,12 +115,13 @@ export default function App(): React.JSX.Element {
     Promise.all([
       TcpTunnelModule.isRunning(),
       TcpTunnelModule.loadConfig(),
-    ]).then(([r, cfg]: [boolean, {host: string; port: number; listenPort: number}]) => {
-      log('state', `isRunning=${r} host=${cfg.host} port=${cfg.port} listenPort=${cfg.listenPort}`);
+    ]).then(([r, cfg]: [boolean, {host: string; port: number; listenPort: number; autoHost: boolean}]) => {
+      log('state', `isRunning=${r} host=${cfg.host} port=${cfg.port} listenPort=${cfg.listenPort} autoHost=${cfg.autoHost}`);
       setRunning(r);
       setHost(cfg.host);
       setPort(String(cfg.port));
       setListenPort(String(cfg.listenPort ?? 8888));
+      setAutoHost(cfg.autoHost ?? true);
     }).catch((e: unknown) => log('state', `load failed: ${String(e)}`));
   }
 
@@ -158,9 +161,23 @@ export default function App(): React.JSX.Element {
   // Handlers
   // ---------------------------------------------------------------------------
 
+  async function resolveTargetHost(): Promise<string> {
+    if (!autoHost) {return host.trim();}
+    try {
+      const wifiIP: string = await TcpTunnelModule.getWifiIP();
+      if (wifiIP && wifiIP !== '0.0.0.0') {
+        log('host', `Auto-host resolved: ${wifiIP}`);
+        return wifiIP;
+      }
+    } catch (_) {}
+    log('host', 'Auto-host fallback: 127.0.0.1');
+    return '127.0.0.1';
+  }
+
   async function startTunnel(portNum: number) {
     const lp = parseInt(listenPort, 10) || 8888;
-    await TcpTunnelModule.startTunnel(host.trim(), portNum, lp);
+    const targetHost = await resolveTargetHost();
+    await TcpTunnelModule.startTunnel(targetHost, portNum, lp);
     setRunning(true);
     PluginManager.unregisterButton(100);
     PluginManager.registerButton(1, ['NOTE', 'DOC'], {
@@ -216,7 +233,7 @@ export default function App(): React.JSX.Element {
 
   async function handleSave() {
     const trimmedHost = host.trim();
-    if (!trimmedHost) {
+    if (!autoHost && !trimmedHost) {
       Alert.alert(s.errHostEmpty, s.errHostEmptyMsg);
       return;
     }
@@ -234,8 +251,8 @@ export default function App(): React.JSX.Element {
       Alert.alert(s.errTunnelActive, s.errTunnelActiveMsg);
     }
     try {
-      await TcpTunnelModule.saveConfig(trimmedHost, portNum, listenPortNum);
-      log('save', `OK host=${trimmedHost} port=${portNum}`);
+      await TcpTunnelModule.saveConfig(trimmedHost, portNum, listenPortNum, autoHost);
+      log('save', `OK host=${trimmedHost} port=${portNum} autoHost=${autoHost}`);
       banner.show(s.bannerSaved, () => {
         setViewMode('control');
         setScreen('control');
@@ -273,9 +290,11 @@ export default function App(): React.JSX.Element {
           host={host}
           port={port}
           listenPort={listenPort}
+          autoHost={autoHost}
           onHostChange={setHost}
           onPortChange={setPort}
           onListenPortChange={setListenPort}
+          onAutoHostChange={setAutoHost}
           onSave={handleSave}
           onBack={() => { setViewMode('control'); setScreen('control'); }}
           onClose={close}
@@ -358,14 +377,16 @@ const PRESETS = [
   {p: '8081', label: 'Browse & Access'},
 ] as const;
 
-function SettingsScreen({s, host, port, listenPort, onHostChange, onPortChange, onListenPortChange, onSave, onBack, onClose}: {
+function SettingsScreen({s, host, port, listenPort, autoHost, onHostChange, onPortChange, onListenPortChange, onAutoHostChange, onSave, onBack, onClose}: {
   s: Strings;
   host: string;
   port: string;
   listenPort: string;
+  autoHost: boolean;
   onHostChange: (v: string) => void;
   onPortChange: (v: string) => void;
   onListenPortChange: (v: string) => void;
+  onAutoHostChange: (v: boolean) => void;
   onSave: () => void;
   onBack: () => void;
   onClose: () => void;
@@ -390,16 +411,35 @@ function SettingsScreen({s, host, port, listenPort, onHostChange, onPortChange, 
 
         <View style={styles.divider} />
 
-        <Text style={styles.fieldLabel}>{s.hostLabel}</Text>
-        <TextInput
-          style={styles.input}
-          value={host}
-          onChangeText={onHostChange}
-          autoCapitalize="none"
-          autoCorrect={false}
-          placeholder="100.113.43.44"
-          placeholderTextColor="#888"
-        />
+        {/* Auto-host toggle */}
+        <View style={styles.toggleRow}>
+          <View style={styles.toggleLabelCol}>
+            <Text style={styles.fieldLabel}>{s.autoHostLabel}</Text>
+            <Text style={styles.fieldHint}>{s.autoHostHint}</Text>
+          </View>
+          <Switch
+            value={autoHost}
+            onValueChange={onAutoHostChange}
+            thumbColor="#fff"
+            trackColor={{false: '#ccc', true: '#000'}}
+          />
+        </View>
+
+        {/* Manual host — visible only when auto-host is OFF */}
+        {!autoHost && (
+          <>
+            <Text style={styles.fieldLabel}>{s.hostLabel}</Text>
+            <TextInput
+              style={styles.input}
+              value={host}
+              onChangeText={onHostChange}
+              autoCapitalize="none"
+              autoCorrect={false}
+              placeholder="100.113.43.44"
+              placeholderTextColor="#888"
+            />
+          </>
+        )}
 
         <Text style={styles.fieldLabel}>{s.targetPortLabel}</Text>
         <TextInput
@@ -538,6 +578,14 @@ const styles = StyleSheet.create({
   hintBold: {fontWeight: '700', color: '#000'},
 
   divider: {height: 1, backgroundColor: '#ddd', marginVertical: 16},
+  toggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+    marginBottom: 12,
+  },
+  toggleLabelCol: {flex: 1, marginRight: 12},
   fieldLabel: {fontSize: 13, color: '#555', marginBottom: 4, fontWeight: '600'},
   fieldHint: {fontSize: 11, color: '#888', marginBottom: 8, fontFamily: 'monospace'},
   input: {
