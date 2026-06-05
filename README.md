@@ -1,115 +1,138 @@
 # sn-TCP-Tunnel
 
-**Forward your Supernote's screen sharing over USB — no WiFi needed.**
+> **Show your Supernote screen on a projector or monitor using only a USB cable.**
+> No WiFi needed. Works in classrooms, conference rooms, anywhere.
 
-Supernote's built-in screen mirroring only works over WiFi. This plugin adds a TCP relay
-inside the device so the stream travels through the USB cable you already have plugged in.
+Supernote has a built-in screen sharing feature, but it requires WiFi — and WiFi in
+schools, hotels, or conference rooms is often slow, restricted, or simply unavailable.
 
-**Source:** [github.com/gorlix/sn-tcp-tunnel](https://github.com/gorlix/sn-tcp-tunnel) |
-**Author:** [Gorlix](https://github.com/gorlix) |
-**Version:** 1.0.0
-
----
-
-## Requirements
-
-| What | Where |
-| ---- | ----- |
-| Supernote A5X / A6X / Nomad with **PluginHost** | on device |
-| **ADB** (Android Debug Bridge) — [download](https://developer.android.com/tools/releases/platform-tools) | on PC |
-| USB cable | — |
-
-No WiFi. No Android Studio. No extra apps.
+This plugin solves that: **plug in the USB cable you already carry and your screen
+appears instantly on any computer or projector.**
 
 ---
 
-## Install
+## What you need
 
-1. Download `snTCPTunnel.snplg` from [Releases](../../releases/latest)
-2. Copy it to the Supernote (USB or WiFi transfer)
-3. On the Supernote: **PluginHost → Install Plugin → select the file**
-4. A **TCP Tunnel** button appears in the toolbar
+| | |
+| - | - |
+| 📱 | Supernote A5X, A6X, or Nomad with **PluginHost** installed |
+| 💻 | A Windows, Mac, or Linux PC connected to a projector or monitor |
+| 🔌 | The USB cable you use to charge the Supernote |
+| ⚙️ | **ADB** — a small free tool from Google ([download here](https://developer.android.com/tools/releases/platform-tools), scroll to *Downloads*) |
+
+That's it. No WiFi. No special hardware. No subscription.
 
 ---
 
-## Usage
+## One-time setup (5 minutes)
 
-1. Plug the Supernote into your PC via USB
-2. Tap **TCP Tunnel** in the toolbar — the control panel opens
-3. Tap **AVVIA TUNNEL** — the dot turns solid (relay active)
-4. On your PC, run the command shown in the control panel:
+### Step 1 — Install ADB on your PC
+
+Download **Platform Tools** from the link above, unzip it anywhere (e.g. your Desktop),
+and keep the folder handy.
+
+**On Windows:** inside the unzipped folder, hold `Shift` and right-click → *Open
+PowerShell window here*.
+
+**On Mac / Linux:** open Terminal and `cd` to the unzipped folder.
+
+### Step 2 — Install the plugin on the Supernote
+
+1. Go to [**Releases**](../../releases/latest) on this page and download
+   `snTCPTunnel.snplg`
+2. Copy the file to your Supernote (via USB drag-and-drop, or the Supernote Partner App)
+3. On the Supernote, open **PluginHost** → tap **Install Plugin** → select the file
+4. A small **TCP Tunnel** button appears in the toolbar at the top of your notes
+
+### Step 3 — Enable USB debugging on the Supernote
+
+On the Supernote, go to **Settings → System** and enable **ADB / USB Debugging**.
+*(You only need to do this once.)*
+
+---
+
+## Every-day use (30 seconds)
+
+> Before starting, make sure **Screen Mirroring** or **File Access** is active —
+> tap the toggle bar at the top of the Supernote screen to enable it.
+
+1. **Plug** the Supernote into your PC with the USB cable
+2. **Tap the TCP Tunnel button** in the toolbar — a control panel appears
+3. **Tap AVVIA TUNNEL** (or *Start Tunnel* in English) — the dot turns solid ●
+4. **Copy the command** shown on screen and **paste it into the terminal** on your PC:
 
    ```sh
    adb forward tcp:8080 tcp:8888
    ```
 
-5. Open `http://localhost:8080` in your browser — your screen appears live
+5. **Open your browser** on the PC and go to:
 
-To stop: tap **SPEGNI TUNNEL** or simply unplug the cable.
+   ```text
+   http://localhost:8080
+   ```
 
----
+Your Supernote screen appears live in the browser. Mirror it to the projector like any
+other browser tab.
 
-## Configuration
-
-Tap **Impostazioni ›** in the control panel, or open Supernote's plugin settings and
-tap the gear icon next to the plugin.
-
-| Setting | Default | Notes |
-| ------- | ------- | ----- |
-| Host destinazione | `100.113.43.44` | Target TCP host (e.g. Tailscale IP) |
-| Porta destinazione | `8080` | Presets: Screen Mirroring (8080), Browse & Access (8081) |
-| Porta ascolto (device) | `8888` | Local port the relay binds on the Supernote |
-
-The ADB command in the control panel updates automatically when you change ports.
+**To stop:** tap *SPEGNI TUNNEL* (Stop Tunnel), or just unplug the cable.
 
 ---
 
-## Language support
+## Settings
 
-The UI follows the Supernote system language automatically. Supported: **Italian** and
-**English** (fallback). No configuration needed — change the language in Supernote's
-settings and the plugin updates live.
+Tap **Impostazioni ›** (Settings) in the control panel to change the connection target.
 
-To add a language, extend the `translations` object in
-[`src/i18n.ts`](src/i18n.ts) and add the new locale code to the `Locale` type.
+| Setting | Default | When to change |
+| ------- | ------- | -------------- |
+| Host | `100.113.43.44` | If you use a different Tailscale or local network address |
+| Port | `8080` | *Screen Mirroring* = 8080, *Browse & Access* = 8081 |
+| Listen port | `8888` | Only if another app conflicts on port 8888 |
+
+The command shown in the app always reflects the current settings — just copy and run it.
+
+---
+
+## Language
+
+The plugin follows the Supernote system language automatically.
+Currently supported: 🇮🇹 **Italian** and 🇬🇧 **English**.
+
+Change the language in **Supernote Settings → Display & Input** and the plugin
+updates instantly.
 
 ---
 
 ## Troubleshooting
 
-**"Porta occupata" error on start**
-Port 8888 is held by a stale process (usually after a crash or a previous socat session).
-Reboot the Supernote to clear it. Alternatively, change the *Porta ascolto* in Settings.
+**The tunnel fails to start ("Porta occupata" / "Port in use")**
+Another process is holding port 8888 from a previous session. The quickest fix is to
+**restart the Supernote**. Alternatively, tap Settings and change the Listen Port to
+any free number (e.g. 7890).
 
-**EADDRINUSE after reinstall**
-The plugin auto-retries once by force-stopping the previous socket. If it still fails,
-reboot.
+**The browser shows nothing after `adb forward`**
+Make sure Screen Mirroring is active on the Supernote *before* tapping Start Tunnel.
+Open the toggle bar at the top of the screen and check.
+
+**"device not found" in the terminal**
+The USB cable must support data transfer (not charge-only). Try a different cable.
+Make sure USB Debugging is enabled in Supernote Settings → System.
 
 ---
 
-## Build from source
+## For developers — build from source
 
 <details>
-<summary>Prerequisites</summary>
+<summary>Click to expand</summary>
 
-- Node.js 18+
-- JDK 21
-- Android SDK (Platform 35, Build-Tools 35.0.0)
+**Prerequisites:** Node.js 18+, JDK 21, Android SDK (Platform 36, Build-Tools 36.1.0,
+NDK 27.1.12297006)
 
 ```bash
-# Arch Linux
-sudo pacman -S jdk21-openjdk
-export JAVA_HOME=/usr/lib/jvm/java-21-openjdk
-
-# Android SDK (no Android Studio needed)
-# Download command-line tools from https://developer.android.com/studio#command-tools
-sdkmanager "platforms;android-35" "build-tools;35.0.0"
-
+# Android SDK setup (no Android Studio needed)
+sdkmanager "platforms;android-36" "build-tools;36.1.0" "ndk;27.1.12297006"
 export ANDROID_HOME=$HOME/Android/Sdk
 echo "sdk.dir=$HOME/Android/Sdk" > android/local.properties
 ```
-
-</details>
 
 ```bash
 git clone https://github.com/gorlix/sn-tcp-tunnel
@@ -119,8 +142,15 @@ npm install
 # Output: build/outputs/snTCPTunnel.snplg
 ```
 
+To release: push a tag `v*` — GitHub Actions builds and attaches the `.snplg` file
+to the release automatically.
+
+To add a language: extend the `translations` object in [`src/i18n.ts`](src/i18n.ts).
+
+</details>
+
 ---
 
 ## License
 
-MIT © [Gorlix](https://github.com/gorlix)
+MIT © [Gorlix](https://github.com/gorlix) — use freely, share freely.
