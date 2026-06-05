@@ -37,6 +37,7 @@ jest.mock('react-native', () => ({
       loadConfig: (...args: unknown[]) => mockLoadConfig(...args),
       startTunnel: (...args: unknown[]) => mockStartTunnel(...args),
       stopTunnel: (...args: unknown[]) => mockStopTunnel(...args),
+      writeLog: jest.fn().mockResolvedValue(null),
       addListener: jest.fn(),
       removeListeners: jest.fn(),
     },
