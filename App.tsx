@@ -26,7 +26,7 @@ import {getViewMode, setViewMode} from './src/viewMode';
 
 const {TcpTunnelModule} = NativeModules;
 
-const LISTEN_PORT = 8888;
+const DEFAULT_LISTEN_PORT = '8888';
 
 const iconOff = Image.resolveAssetSource(require('./assets/icon/icon_off.png')).uri;
 const iconOn = Image.resolveAssetSource(require('./assets/icon/icon_on.png')).uri;
@@ -92,6 +92,7 @@ export default function App(): React.JSX.Element {
   const [loading, setLoading] = useState(false);
   const [host, setHost] = useState('');
   const [port, setPort] = useState('');
+  const [listenPort, setListenPort] = useState(DEFAULT_LISTEN_PORT);
   const banner = useBanner();
 
   useEffect(() => {
@@ -99,16 +100,18 @@ export default function App(): React.JSX.Element {
     Promise.all([
       TcpTunnelModule.isRunning(),
       TcpTunnelModule.loadConfig(),
-    ]).then(([r, cfg]: [boolean, {host: string; port: number}]) => {
-      log('mount', `isRunning=${r} host=${cfg.host} port=${cfg.port}`);
+    ]).then(([r, cfg]: [boolean, {host: string; port: number; listenPort: number}]) => {
+      log('mount', `isRunning=${r} host=${cfg.host} port=${cfg.port} listenPort=${cfg.listenPort}`);
       setRunning(r);
       setHost(cfg.host);
       setPort(String(cfg.port));
+      setListenPort(String(cfg.listenPort ?? 7890));
     }).catch((e: unknown) => log('mount', `init failed: ${String(e)}`));
   }, [initialScreen]);
 
   async function startTunnel(portNum: number) {
-    await TcpTunnelModule.startTunnel(host.trim(), portNum, LISTEN_PORT);
+    const lp = parseInt(listenPort, 10) || 7890;
+    await TcpTunnelModule.startTunnel(host.trim(), portNum, lp);
     setRunning(true);
     PluginManager.unregisterButton(100);
     PluginManager.registerButton(1, ['NOTE', 'DOC'], {
@@ -145,9 +148,10 @@ export default function App(): React.JSX.Element {
             } catch (e2: unknown) {
               const msg2 = e2 instanceof Error ? e2.message : String(e2);
               log('toggle', `retry FAILED: ${msg2}`);
+              const lp2 = parseInt(listenPort, 10) || 8888;
               Alert.alert(
                 'Porta occupata',
-                `La porta ${LISTEN_PORT} è occupata da un altro processo. Chiudilo e riprova.`,
+                `La porta ${lp2} è occupata da un altro processo.\n\nProva a riavviare il Supernote per liberarla, poi ripremi AVVIA.\n\nIn alternativa cambia la "Porta ascolto" nelle Impostazioni.`,
               );
             }
           } else {
@@ -176,6 +180,11 @@ export default function App(): React.JSX.Element {
       Alert.alert('Porta non valida', 'La porta deve essere tra 1 e 65535.');
       return;
     }
+    const listenPortNum = parseInt(listenPort, 10);
+    if (!isValidPort(listenPortNum)) {
+      Alert.alert('Porta ascolto non valida', 'La porta ascolto deve essere tra 1 e 65535.');
+      return;
+    }
     if (running) {
       Alert.alert(
         'Tunnel attivo',
@@ -183,7 +192,7 @@ export default function App(): React.JSX.Element {
       );
     }
     try {
-      await TcpTunnelModule.saveConfig(trimmedHost, portNum);
+      await TcpTunnelModule.saveConfig(trimmedHost, portNum, listenPortNum);
       log('save', `OK host=${trimmedHost} port=${portNum}`);
       banner.show('Impostazioni salvate', () => {
         setViewMode('control');
@@ -211,6 +220,7 @@ export default function App(): React.JSX.Element {
           running={running}
           loading={loading}
           targetPort={port}
+          listenPort={listenPort}
           onToggle={handleToggle}
           onSettings={() => { setViewMode('settings'); setScreen('settings'); }}
           onClose={close}
@@ -219,8 +229,10 @@ export default function App(): React.JSX.Element {
         <SettingsScreen
           host={host}
           port={port}
+          listenPort={listenPort}
           onHostChange={setHost}
           onPortChange={setPort}
+          onListenPortChange={setListenPort}
           onSave={handleSave}
           onBack={() => { setViewMode('control'); setScreen('control'); }}
           onClose={close}
@@ -234,10 +246,11 @@ export default function App(): React.JSX.Element {
 // Control screen
 // ---------------------------------------------------------------------------
 
-function ControlScreen({running, loading, targetPort, onToggle, onSettings, onClose}: {
+function ControlScreen({running, loading, targetPort, listenPort, onToggle, onSettings, onClose}: {
   running: boolean;
   loading: boolean;
   targetPort: string;
+  listenPort: string;
   onToggle: () => void;
   onSettings: () => void;
   onClose: () => void;
@@ -275,7 +288,7 @@ function ControlScreen({running, loading, targetPort, onToggle, onSettings, onCl
           <View style={styles.adbBox}>
             <Text style={styles.adbLabel}>Comando PC</Text>
             <Text style={styles.adbCommand}>
-              {'adb forward tcp:' + targetPort + ' tcp:' + LISTEN_PORT}
+              {'adb forward tcp:' + targetPort + ' tcp:' + listenPort}
             </Text>
           </View>
         )}
@@ -293,11 +306,13 @@ const PRESETS = [
   {p: '8081', label: 'Browse & Access'},
 ] as const;
 
-function SettingsScreen({host, port, onHostChange, onPortChange, onSave, onBack, onClose}: {
+function SettingsScreen({host, port, listenPort, onHostChange, onPortChange, onListenPortChange, onSave, onBack, onClose}: {
   host: string;
   port: string;
+  listenPort: string;
   onHostChange: (v: string) => void;
   onPortChange: (v: string) => void;
+  onListenPortChange: (v: string) => void;
   onSave: () => void;
   onBack: () => void;
   onClose: () => void;
@@ -335,14 +350,28 @@ function SettingsScreen({host, port, onHostChange, onPortChange, onSave, onBack,
           placeholderTextColor="#888"
         />
 
-        {/* Port */}
-        <Text style={styles.fieldLabel}>Porta destinazione</Text>
+        {/* Target port */}
+        <Text style={styles.fieldLabel}>Porta destinazione (target)</Text>
         <TextInput
           style={styles.input}
           value={port}
           onChangeText={onPortChange}
           keyboardType="numeric"
           placeholder="8080"
+          placeholderTextColor="#888"
+        />
+
+        <View style={styles.divider} />
+
+        {/* Listen port */}
+        <Text style={styles.fieldLabel}>Porta ascolto (device)</Text>
+        <Text style={styles.fieldHint}>Usata in: adb forward tcp:… tcp:{listenPort}</Text>
+        <TextInput
+          style={styles.input}
+          value={listenPort}
+          onChangeText={onListenPortChange}
+          keyboardType="numeric"
+          placeholder="7890"
           placeholderTextColor="#888"
         />
 
@@ -463,7 +492,8 @@ const styles = StyleSheet.create({
 
   // Settings fields
   divider: {height: 1, backgroundColor: '#ddd', marginVertical: 16},
-  fieldLabel: {fontSize: 13, color: '#555', marginBottom: 8, fontWeight: '600'},
+  fieldLabel: {fontSize: 13, color: '#555', marginBottom: 4, fontWeight: '600'},
+  fieldHint: {fontSize: 11, color: '#888', marginBottom: 8, fontFamily: 'monospace'},
   input: {
     fontSize: 15,
     color: '#000',

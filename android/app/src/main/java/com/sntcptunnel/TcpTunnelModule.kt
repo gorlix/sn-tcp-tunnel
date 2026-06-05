@@ -71,6 +71,7 @@ class TcpTunnelModule(private val ctx: ReactApplicationContext) : ReactContextBa
         private const val CONFIG_FILE = "tunnel_config.json"
         private const val DEFAULT_HOST = "100.113.43.44"
         private const val DEFAULT_PORT = 8080
+        private const val DEFAULT_LISTEN_PORT = 8888
         private const val TAG = "TcpTunnelModule"
     }
 
@@ -214,12 +215,13 @@ class TcpTunnelModule(private val ctx: ReactApplicationContext) : ReactContextBa
      * Persists the tunnel target configuration to internal storage.
      */
     @ReactMethod
-    fun saveConfig(host: String, port: Int, promise: Promise) {
-        TunnelLogger.i(TAG, "saveConfig called: host=$host port=$port")
+    fun saveConfig(host: String, port: Int, listenPort: Int, promise: Promise) {
+        TunnelLogger.i(TAG, "saveConfig called: host=$host port=$port listenPort=$listenPort")
         try {
             val json = JSONObject().apply {
                 put("host", host)
                 put("port", port)
+                put("listenPort", listenPort)
             }
             val f = File(ctx.filesDir, CONFIG_FILE)
             f.writeText(json.toString())
@@ -250,10 +252,12 @@ class TcpTunnelModule(private val ctx: ReactApplicationContext) : ReactContextBa
             }
             val host = json.optString("host", DEFAULT_HOST)
             val port = json.optInt("port", DEFAULT_PORT)
-            TunnelLogger.i(TAG, "loadConfig result: host=$host port=$port")
+            val listenPort = json.optInt("listenPort", DEFAULT_LISTEN_PORT)
+            TunnelLogger.i(TAG, "loadConfig result: host=$host port=$port listenPort=$listenPort")
             val map = Arguments.createMap().apply {
                 putString("host", host)
                 putInt("port", port)
+                putInt("listenPort", listenPort)
             }
             promise.resolve(map)
         } catch (e: Exception) {
