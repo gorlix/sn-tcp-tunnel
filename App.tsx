@@ -72,7 +72,7 @@ function Header({title, onClose, onBack}: {
       <Text style={styles.headerTitle}>{title}</Text>
       {onBack ? (
         <TouchableOpacity style={styles.backBox} onPress={onBack}>
-          <Text style={styles.backBoxText}>←</Text>
+          <Text style={styles.backBoxText}>Indietro</Text>
         </TouchableOpacity>
       ) : (
         <View style={styles.headerSpacer} />
@@ -407,35 +407,31 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#000',
-    height: 52,
-    paddingHorizontal: 12,
+    height: 72,
+    paddingHorizontal: 16,
   },
   closeBox: {
-    width: 36,
-    height: 32,
-    borderWidth: 1,
-    borderColor: '#fff',
+    width: 48,
+    height: 48,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  closeBoxText: {color: '#fff', fontSize: 16, fontWeight: '900', lineHeight: 20},
+  closeBoxText: {color: '#fff', fontSize: 22, fontWeight: '900'},
   headerTitle: {
     flex: 1,
     textAlign: 'center',
     color: '#fff',
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: '600',
   },
-  headerSpacer: {width: 36},
+  headerSpacer: {width: 48},
   backBox: {
-    width: 36,
-    height: 32,
-    borderWidth: 1,
-    borderColor: '#fff',
+    height: 48,
+    paddingHorizontal: 4,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  backBoxText: {color: '#fff', fontSize: 18, fontWeight: '700', lineHeight: 22},
+  backBoxText: {color: '#fff', fontSize: 14, fontWeight: '600'},
 
   // Body
   body: {flex: 1, paddingHorizontal: 20, paddingTop: 20},
