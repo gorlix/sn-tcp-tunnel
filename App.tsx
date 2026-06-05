@@ -97,6 +97,7 @@ function Header({title, onClose, backLabel, onBack}: {
 // ---------------------------------------------------------------------------
 
 export default function App(): React.JSX.Element {
+  console.log('[sn-tcp-tunnel] App component rendering');
   const initialScreen = getViewMode();
   const [screen, setScreen] = useState<'control' | 'settings'>(initialScreen);
   const [locale, setLocale] = useState<Locale>(getCurrentLocale);
