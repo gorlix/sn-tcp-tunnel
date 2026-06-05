@@ -6,21 +6,58 @@ on:
       - 'v*'
 
 jobs:
-  build:
+  build-and-release:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: 18
+          cache: npm
+
       - uses: actions/setup-java@v4
         with:
           java-version: 21
           distribution: temurin
+
       - uses: android-actions/setup-android@v3
-      - run: npm ci
-      - run: chmod +x buildPlugin.sh && ./buildPlugin.sh
-      - uses: softprops/action-gh-release@v2
         with:
-          files: build/outputs/plugin.snplg
-          generate_release_notes: true
+          packages: >-
+            platforms;android-36
+            build-tools;36.1.0
+            ndk;27.1.12297006
+
+      - name: Write android/local.properties
+        run: echo "sdk.dir=$ANDROID_HOME" > android/local.properties
+
+      - name: Install JS dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test -- --ci
+
+      - name: Build plugin
+        run: chmod +x buildPlugin.sh && ./buildPlugin.sh
+
+      - name: Verify output
+        run: ls -lh build/outputs/snTCPTunnel.snplg
+
+      - name: Get tag annotation body
+        id: tag_info
+        run: |
+          git fetch --tags --force
+          TAG_BODY=$(git tag -l --format='%(contents)' "${{ github.ref_name }}")
+          {
+            echo "body<<EOF"
+            echo "$TAG_BODY"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/outputs/snTCPTunnel.snplg
+          body: ${{ steps.tag_info.outputs.body }}
+          fail_on_unmatched_files: true
