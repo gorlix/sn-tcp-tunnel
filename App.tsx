@@ -11,7 +11,6 @@
 import React, {useEffect, useRef, useState} from 'react';
 import {
   Alert,
-  Animated,
   Image,
   NativeModules,
   StyleSheet,
@@ -41,21 +40,18 @@ function log(tag: string, msg: string) {
 
 function useBanner() {
   const [text, setText] = useState('');
-  const opacity = useRef(new Animated.Value(0)).current;
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function show(msg: string, onDone?: () => void) {
     if (timer.current) {clearTimeout(timer.current);}
     setText(msg);
-    opacity.setValue(1);
     timer.current = setTimeout(() => {
-      Animated.timing(opacity, {toValue: 0, duration: 300, useNativeDriver: true}).start(() => {
-        onDone?.();
-      });
-    }, 1200);
+      setText('');
+      onDone?.();
+    }, 1500);
   }
 
-  return {text, opacity, show};
+  return {text, show};
 }
 
 // ---------------------------------------------------------------------------
@@ -150,7 +146,13 @@ export default function App(): React.JSX.Element {
       Alert.alert('Porta non valida', 'La porta deve essere tra 1 e 65535.');
       return;
     }
-    log('save', `Saving: host=${trimmedHost} port=${portNum}`);
+    log('save', `Saving: host=${trimmedHost} port=${portNum} running=${running}`);
+    if (running) {
+      Alert.alert(
+        'Tunnel attivo',
+        'Le nuove impostazioni verranno usate al prossimo avvio. Il tunnel corrente resta invariato.',
+      );
+    }
     try {
       await TcpTunnelModule.saveConfig(trimmedHost, portNum);
       log('save', 'saveConfig SUCCESS');
@@ -169,15 +171,16 @@ export default function App(): React.JSX.Element {
     <View style={styles.container}>
       {/* Top notification banner (replaces ToastAndroid — Android 30+ ignores gravity) */}
       {banner.text ? (
-        <Animated.View style={[styles.banner, {opacity: banner.opacity}]}>
+        <View style={styles.banner}>
           <Text style={styles.bannerText}>{banner.text}</Text>
-        </Animated.View>
+        </View>
       ) : null}
 
       {screen === 'control' ? (
         <ControlScreen
           running={running}
           loading={loading}
+          targetPort={port}
           onToggle={handleToggle}
           onSettings={openSettings}
           onClose={() => PluginManager.closePluginView()}
@@ -202,9 +205,10 @@ export default function App(): React.JSX.Element {
 // Control screen
 // ---------------------------------------------------------------------------
 
-function ControlScreen({running, loading, onToggle, onSettings, onClose}: {
+function ControlScreen({running, loading, targetPort, onToggle, onSettings, onClose}: {
   running: boolean;
   loading: boolean;
+  targetPort: string;
   onToggle: () => void;
   onSettings: () => void;
   onClose: () => void;
@@ -236,7 +240,7 @@ function ControlScreen({running, loading, onToggle, onSettings, onClose}: {
         <View style={styles.adbBox}>
           <Text style={styles.adbLabel}>Comando PC:</Text>
           <Text style={styles.adbCommand}>
-            {'adb forward tcp:8080 tcp:' + LISTEN_PORT}
+            {'adb forward tcp:' + targetPort + ' tcp:' + LISTEN_PORT}
           </Text>
         </View>
       )}
