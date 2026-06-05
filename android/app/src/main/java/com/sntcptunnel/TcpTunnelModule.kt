@@ -80,9 +80,8 @@ class TcpTunnelModule(private val ctx: ReactApplicationContext) : ReactContextBa
     private var usbReceiver: BroadcastReceiver? = null
 
     init {
-        TunnelLogger.init(ctx)
+        TunnelLogger.init()
         TunnelLogger.i(TAG, "TcpTunnelModule instantiated")
-        TunnelLogger.i(TAG, "Log path: ${TunnelLogger.getLogPath()}")
         TunnelLogger.i(TAG, "Config file: ${File(ctx.filesDir, CONFIG_FILE).absolutePath}")
     }
 
@@ -262,15 +261,6 @@ class TcpTunnelModule(private val ctx: ReactApplicationContext) : ReactContextBa
     fun writeLog(message: String, promise: Promise) {
         TunnelLogger.js(message)
         promise.resolve(null)
-    }
-
-    /**
-     * Returns the absolute path of the active log file.
-     * Useful for the user to know where to find the log on the device.
-     */
-    @ReactMethod
-    fun getLogPath(promise: Promise) {
-        promise.resolve(TunnelLogger.getLogPath())
     }
 
     @ReactMethod
