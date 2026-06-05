@@ -10,7 +10,7 @@
     "test": "jest",
     "prepare": "husky",
     "build": "npm test -- --ci && chmod +x buildPlugin.sh && ./buildPlugin.sh",
-    "build:verify": "ls -lh build/outputs/plugin.snplg 2>/dev/null && echo 'Build OK' || echo 'Build NOT FOUND'"
+    "build:verify": "ls -lh build/outputs/snTCPTunnel.snplg 2>/dev/null && echo 'Build OK' || echo 'Build NOT FOUND'"
   },
   "dependencies": {
     "react": "19.0.0",
