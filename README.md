@@ -154,3 +154,10 @@ To add a language: extend the `translations` object in [`src/i18n.ts`](src/i18n.
 ## License
 
 MIT © [Gorlix](https://github.com/gorlix) — use freely, share freely.
+
+---
+
+## Credits
+
+Designed and conceived by **[Gorlix](https://github.com/gorlix)** —
+vibecoded together with **[Claude Code](https://claude.ai/code)** by Anthropic. 🤖
