@@ -103,7 +103,7 @@ export default function App(): React.JSX.Element {
           id: 100, name: 'TCP Tunnel', icon: iconOff, enable: true, expandButton: 0,
         });
         log('toggle', 'stopTunnel SUCCESS');
-        banner.show('Tunnel spento', () => PluginManager.closePluginView());
+        banner.show('Tunnel spento');
       } else {
         log('toggle', `Calling startTunnel: host=${host} port=${port} listenPort=${LISTEN_PORT}`);
         const portNum = parseInt(port, 10);
@@ -114,7 +114,7 @@ export default function App(): React.JSX.Element {
           id: 100, name: 'TCP Tunnel', icon: iconOn, enable: true, expandButton: 0,
         });
         log('toggle', 'startTunnel SUCCESS');
-        banner.show('Tunnel acceso ✓', () => PluginManager.closePluginView());
+        banner.show('Tunnel acceso ✓');
       }
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
