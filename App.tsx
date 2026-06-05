@@ -1,29 +1,21 @@
 /**
  * @file App.tsx
- * @description Configuration view for the sn-TCP-Tunnel plugin.
+ * @description Main control panel for sn-TCP-Tunnel.
  *
- * This component is rendered inside the Supernote PluginHost plugin pane when the
- * user taps the Tunnel Config toolbar button. It allows the user to inspect the
- * device's current WiFi IP and to change the TCP relay's target host and port.
- *
- * Lifecycle:
- *  - On mount: loads persisted configuration and current WiFi IP from native layer.
- *  - On save: validates port range, persists via TcpTunnelModule.saveConfig, then
- *    closes the plugin view.
- *  - On cancel: closes the plugin view without writing any changes.
- *
- * Note: changes to host/port take effect on the next tunnel activation. If the
- * tunnel is already running when the user saves, the new configuration will be
- * used on the next start (a restart is not triggered automatically).
+ * Shown when the user taps the sidebar toggle button.
+ * Displays current tunnel state and lets the user start/stop the relay,
+ * copy the adb forward command, and open inline settings.
  */
 
 import React, {useEffect, useState} from 'react';
 import {
   Alert,
+  Image,
   NativeModules,
   StyleSheet,
   Text,
   TextInput,
+  ToastAndroid,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -32,133 +24,190 @@ import {isValidPort} from './src/validation';
 
 const {TcpTunnelModule} = NativeModules;
 
+const LISTEN_PORT = 8888;
+
+const iconOff = Image.resolveAssetSource(require('./assets/icon/icon_off.png')).uri;
+const iconOn = Image.resolveAssetSource(require('./assets/icon/icon_on.png')).uri;
+
+function toast(msg: string) {
+  ToastAndroid.showWithGravity(msg, ToastAndroid.SHORT, ToastAndroid.TOP);
+  TcpTunnelModule.writeLog(`[${new Date().toISOString()}] [App/toast] ${msg}`).catch(
+    () => {},
+  );
+}
+
 function log(tag: string, msg: string) {
   const line = `[${new Date().toISOString()}] [App/${tag}] ${msg}`;
   TcpTunnelModule.writeLog(line).catch(() => {});
 }
 
-/**
- * Root component for the plugin configuration view.
- *
- * Renders a form with:
- *  - A read-only field showing the device's current WiFi IP address.
- *  - An editable field for the relay target host.
- *  - An editable field for the relay target port (validated: 1–65535).
- *  - Save and Cancel actions.
- *
- * @returns {React.JSX.Element} The rendered configuration form.
- */
 export default function App(): React.JSX.Element {
-  /** Target host, bound to the TextInput for editing. */
+  const [running, setRunning] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [host, setHost] = useState('');
-
-  /** Target port as a string to allow free-form input before numeric validation on save. */
   const [port, setPort] = useState('');
-
-  /** Device WiFi IP, read-only, fetched from TcpTunnelModule.getWifiIP on mount. */
   const [wifiIP, setWifiIP] = useState('');
+  const [showSettings, setShowSettings] = useState(false);
 
-  /**
-   * On mount: load persisted config and WiFi IP concurrently.
-   * WiFi IP errors are silently ignored because the device may not be on WiFi
-   * (the tunnel still works over USB regardless of WiFi state).
-   */
   useEffect(() => {
-    log('mount', 'Config view mounted — loading config and WiFi IP');
-    TcpTunnelModule.loadConfig()
-      .then((cfg: {host: string; port: number}) => {
-        log('mount', `Config loaded: host=${cfg.host} port=${cfg.port}`);
-        setHost(cfg.host);
-        setPort(String(cfg.port));
-      })
-      .catch((e: unknown) => {
-        log('mount', `loadConfig FAILED: ${String(e)}`);
-        Alert.alert('Error', 'Failed to load configuration.');
-      });
-    TcpTunnelModule.getWifiIP()
-      .then((ip: string) => {
-        log('mount', `WiFi IP: ${ip}`);
-        setWifiIP(ip);
-      })
-      .catch(() => {
-        log('mount', 'getWifiIP failed (device may not be on WiFi)');
-      });
+    log('mount', 'Panel opened — reading state');
+    Promise.all([
+      TcpTunnelModule.isRunning(),
+      TcpTunnelModule.loadConfig(),
+      TcpTunnelModule.getWifiIP().catch(() => ''),
+    ]).then(([r, cfg, ip]: [boolean, {host: string; port: number}, string]) => {
+      log('mount', `isRunning=${r} host=${cfg.host} port=${cfg.port} wifiIP=${ip}`);
+      setRunning(r);
+      setHost(cfg.host);
+      setPort(String(cfg.port));
+      setWifiIP(ip);
+    }).catch((e: unknown) => {
+      log('mount', `init failed: ${String(e)}`);
+      Alert.alert('Errore', 'Impossibile leggere lo stato del tunnel.');
+    });
   }, []);
 
-  /**
-   * Validates the port field and, if valid, persists the configuration and closes
-   * the plugin view.
-   *
-   * Port validation rejects NaN, 0, negative values, and values above 65535.
-   * Host validation is intentionally lenient — the user is responsible for
-   * providing a reachable address (hostname or dotted-decimal IP).
-   */
-  function handleSave() {
+  async function handleToggle() {
+    setLoading(true);
+    try {
+      if (running) {
+        log('toggle', 'Calling stopTunnel...');
+        await TcpTunnelModule.stopTunnel();
+        setRunning(false);
+        PluginManager.unregisterButton(100);
+        PluginManager.registerButton(1, ['NOTE', 'DOC'], {
+          id: 100,
+          name: 'TCP Tunnel',
+          icon: iconOff,
+          enable: true,
+          expandButton: 0,
+        });
+        toast('Tunnel spento');
+        log('toggle', 'stopTunnel SUCCESS');
+        PluginManager.closePluginView();
+      } else {
+        log('toggle', `Calling startTunnel: host=${host} port=${port} listenPort=${LISTEN_PORT}`);
+        const portNum = parseInt(port, 10);
+        await TcpTunnelModule.startTunnel(host.trim(), portNum, LISTEN_PORT);
+        setRunning(true);
+        PluginManager.unregisterButton(100);
+        PluginManager.registerButton(1, ['NOTE', 'DOC'], {
+          id: 100,
+          name: 'TCP Tunnel',
+          icon: iconOn,
+          enable: true,
+          expandButton: 0,
+        });
+        toast('Tunnel acceso ✓');
+        log('toggle', 'startTunnel SUCCESS');
+        PluginManager.closePluginView();
+      }
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      log('toggle', `FAILED: ${msg}`);
+      Alert.alert('Errore', msg);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleSave() {
     const trimmedHost = host.trim();
-    log('save', `handleSave called: host="${trimmedHost}" port="${port}"`);
     if (!trimmedHost) {
-      log('save', 'Validation FAILED: host is empty');
-      Alert.alert('Invalid host', 'Host cannot be empty.');
+      Alert.alert('Host non valido', 'Il campo host non può essere vuoto.');
       return;
     }
     const portNum = parseInt(port, 10);
     if (!isValidPort(portNum)) {
-      log('save', `Validation FAILED: port "${port}" → ${portNum} is not in 1–65535`);
-      Alert.alert('Invalid port', 'Port must be 1–65535.');
+      Alert.alert('Porta non valida', 'La porta deve essere tra 1 e 65535.');
       return;
     }
-    log('save', `Validation OK — calling saveConfig: host=${trimmedHost} port=${portNum}`);
+    log('save', `Saving: host=${trimmedHost} port=${portNum}`);
     TcpTunnelModule.saveConfig(trimmedHost, portNum)
       .then(() => {
-        log('save', 'saveConfig SUCCESS — closing config view');
-        PluginManager.closePluginView();
+        log('save', 'saveConfig SUCCESS');
+        toast('Impostazioni salvate');
+        setShowSettings(false);
       })
       .catch((e: unknown) => {
         log('save', `saveConfig FAILED: ${String(e)}`);
-        Alert.alert('Error', 'Failed to save configuration.');
+        Alert.alert('Errore', 'Impossibile salvare la configurazione.');
       });
   }
 
+  const adbCommand = `adb forward tcp:8080 tcp:${LISTEN_PORT}`;
+
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>TCP Tunnel Config</Text>
+      {/* Header */}
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>TCP Tunnel</Text>
+        <TouchableOpacity onPress={() => PluginManager.closePluginView()} style={styles.closeBtn}>
+          <Text style={styles.closeBtnText}>✕</Text>
+        </TouchableOpacity>
+      </View>
 
-      {/* Device WiFi IP — informational only, helps the user identify the device
-          on the network without leaving the plugin view. */}
-      <Text style={styles.label}>Device WiFi IP</Text>
-      <Text style={styles.readonly}>{wifiIP || '—'}</Text>
+      {/* Status */}
+      <View style={styles.statusRow}>
+        <View style={[styles.dot, running ? styles.dotOn : styles.dotOff]} />
+        <Text style={styles.statusText}>{running ? 'ATTIVO' : 'INATTIVO'}</Text>
+        {wifiIP ? <Text style={styles.wifiText}>  WiFi: {wifiIP}</Text> : null}
+      </View>
 
-      <Text style={styles.label}>Target Host</Text>
-      <TextInput
-        style={styles.input}
-        value={host}
-        onChangeText={setHost}
-        autoCapitalize="none"
-        autoCorrect={false}
-        keyboardType="default"
-        placeholder="100.113.43.44"
-        placeholderTextColor="#888"
-      />
-
-      <Text style={styles.label}>Target Port</Text>
-      <TextInput
-        style={styles.input}
-        value={port}
-        onChangeText={setPort}
-        keyboardType="numeric"
-        placeholder="8080"
-        placeholderTextColor="#888"
-      />
-
-      <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
-        <Text style={styles.saveText}>Save</Text>
-      </TouchableOpacity>
-
+      {/* Toggle button */}
       <TouchableOpacity
-        style={styles.cancelButton}
-        onPress={() => PluginManager.closePluginView()}>
-        <Text style={styles.cancelText}>Cancel</Text>
+        style={[styles.toggleBtn, loading && styles.toggleBtnDisabled]}
+        onPress={handleToggle}
+        disabled={loading}>
+        <Text style={styles.toggleBtnText}>
+          {loading ? '...' : running ? 'SPEGNI TUNNEL' : 'AVVIA TUNNEL'}
+        </Text>
       </TouchableOpacity>
+
+      {/* ADB command — shown only when active */}
+      {running && (
+        <View style={styles.adbBox}>
+          <Text style={styles.adbLabel}>Comando PC:</Text>
+          <Text style={styles.adbCommand}>{adbCommand}</Text>
+        </View>
+      )}
+
+      {/* Settings toggle */}
+      <TouchableOpacity
+        style={styles.settingsBtn}
+        onPress={() => setShowSettings(s => !s)}>
+        <Text style={styles.settingsBtnText}>
+          {showSettings ? '▲ Chiudi impostazioni' : '⚙ Impostazioni'}
+        </Text>
+      </TouchableOpacity>
+
+      {/* Inline settings panel */}
+      {showSettings && (
+        <View style={styles.settingsPanel}>
+          <Text style={styles.label}>Host destinazione</Text>
+          <TextInput
+            style={styles.input}
+            value={host}
+            onChangeText={setHost}
+            autoCapitalize="none"
+            autoCorrect={false}
+            placeholder="100.113.43.44"
+            placeholderTextColor="#888"
+          />
+          <Text style={styles.label}>Porta destinazione</Text>
+          <TextInput
+            style={styles.input}
+            value={port}
+            onChangeText={setPort}
+            keyboardType="numeric"
+            placeholder="8080"
+            placeholderTextColor="#888"
+          />
+          <TouchableOpacity style={styles.saveBtn} onPress={handleSave}>
+            <Text style={styles.saveBtnText}>Salva</Text>
+          </TouchableOpacity>
+        </View>
+      )}
     </View>
   );
 }
@@ -167,56 +216,131 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#fff',
-    padding: 24,
+    padding: 20,
   },
-  title: {
-    fontSize: 20,
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  headerTitle: {
+    fontSize: 18,
     fontWeight: '700',
-    marginBottom: 24,
     color: '#000',
   },
-  label: {
+  closeBtn: {
+    padding: 6,
+  },
+  closeBtnText: {
+    fontSize: 18,
+    color: '#000',
+    fontWeight: '700',
+  },
+  statusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  dot: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    marginRight: 8,
+    borderWidth: 2,
+    borderColor: '#000',
+  },
+  dotOn: {
+    backgroundColor: '#000',
+  },
+  dotOff: {
+    backgroundColor: '#fff',
+  },
+  statusText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#000',
+  },
+  wifiText: {
     fontSize: 13,
+    color: '#555',
+  },
+  toggleBtn: {
+    backgroundColor: '#000',
+    borderRadius: 8,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  toggleBtnDisabled: {
+    backgroundColor: '#888',
+  },
+  toggleBtnText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  adbBox: {
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 6,
+    padding: 12,
+    marginBottom: 20,
+    backgroundColor: '#f8f8f8',
+  },
+  adbLabel: {
+    fontSize: 11,
+    color: '#888',
+    marginBottom: 4,
+  },
+  adbCommand: {
+    fontFamily: 'monospace',
+    fontSize: 13,
+    color: '#000',
+  },
+  settingsBtn: {
+    paddingVertical: 10,
+    alignItems: 'center',
+    borderTopWidth: 1,
+    borderTopColor: '#eee',
+  },
+  settingsBtnText: {
+    fontSize: 14,
+    color: '#555',
+  },
+  settingsPanel: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#eee',
+  },
+  label: {
+    fontSize: 12,
     fontWeight: '600',
     color: '#333',
     marginBottom: 4,
-    marginTop: 16,
-  },
-  readonly: {
-    fontSize: 15,
-    color: '#555',
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#ddd',
+    marginTop: 10,
   },
   input: {
-    fontSize: 15,
+    fontSize: 14,
     color: '#000',
     borderWidth: 1,
     borderColor: '#ccc',
     borderRadius: 6,
     paddingHorizontal: 10,
-    paddingVertical: 8,
+    paddingVertical: 7,
   },
-  saveButton: {
-    marginTop: 32,
+  saveBtn: {
+    marginTop: 14,
     backgroundColor: '#000',
-    borderRadius: 8,
-    paddingVertical: 12,
+    borderRadius: 6,
+    paddingVertical: 10,
     alignItems: 'center',
   },
-  saveText: {
+  saveBtnText: {
     color: '#fff',
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
-  },
-  cancelButton: {
-    marginTop: 12,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  cancelText: {
-    color: '#555',
-    fontSize: 15,
   },
 });

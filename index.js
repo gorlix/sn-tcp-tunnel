@@ -1,30 +1,18 @@
 /**
  * @file index.js
- * @description Plugin entry point for the sn-TCP-Tunnel Supernote plugin.
+ * @description Plugin entry point for sn-TCP-Tunnel.
  *
  * Responsibilities:
- *  - Register the main toggle button (id=100) in the sidebar via registerButton(type=1).
- *  - Register the config button via registerConfigButton() so it appears in the
- *    plugin settings panel.
- *  - Implement the activate/deactivate state machine that starts and stops
- *    the native TCP relay via TcpTunnelModule.
- *  - Swap the toolbar icon between icon_off and icon_on to reflect relay state.
- *  - Listen for the "onUsbDisconnect" native event and automatically deactivate
- *    the relay when the USB cable is removed.
+ *  - Register the main toggle button (id=100) in the sidebar.
+ *  - On button press: open the App.tsx control panel via showPluginView().
+ *    The panel handles start/stop and updates the icon itself.
+ *  - On USB disconnect: stop the tunnel automatically.
  *
- * State machine:
- *  INACTIVE ──[button press]──► ACTIVE ──[button press / USB disconnect]──► INACTIVE
- *
- * Button API notes (sn-plugin-lib):
- *  - registerButton(type, appTypes, button): type 1=sidebar, 2=lasso, 3=doc selection
- *  - registerConfigButton(): registers the settings/gear button in the plugin panel
- *  - Button clicks arrive via registerButtonListener({ onButtonPress(event) })
- *  - Config button clicks via registerConfigButtonListener({ onClick() })
- *  - Icon swap = unregisterButton(id) + registerButton(...) with new icon
- *  - PluginButton.enable must be true for the button to be interactive
+ * All tunnel logic (start/stop, icon swap, Toast) lives in App.tsx so
+ * the user has a single place to interact with the plugin.
  */
 
-import {AppRegistry, Image, NativeModules, NativeEventEmitter, ToastAndroid} from 'react-native';
+import {AppRegistry, Image, NativeModules, NativeEventEmitter} from 'react-native';
 import App from './App';
 import {name as appName} from './app.json';
 import {PluginManager} from 'sn-plugin-lib';
@@ -35,43 +23,20 @@ PluginManager.init();
 
 const {TcpTunnelModule} = NativeModules;
 
-/**
- * Fire-and-forget logger. Writes to the native log file + logcat tag snTCPTunnel.
- * @param {string} tag  Short category label.
- * @param {string} msg  Human-readable message.
- */
 function log(tag, msg) {
-  const line = `[${new Date().toISOString()}] [${tag}] ${msg}`;
-  TcpTunnelModule.writeLog(line).catch(() => {});
+  TcpTunnelModule.writeLog(`[${new Date().toISOString()}] [${tag}] ${msg}`).catch(() => {});
 }
 
-/**
- * NativeEventEmitter bound to TcpTunnelModule.
- * Receives "onUsbDisconnect" from the Kotlin BroadcastReceiver.
- */
 const emitter = new NativeEventEmitter(TcpTunnelModule);
 
-/** Local port on which the TCP relay listens. PC-side: adb forward tcp:8080 tcp:8888. */
-const LISTEN_PORT = 8888;
-
-log('init', `index.js loaded — LISTEN_PORT=${LISTEN_PORT}`);
+log('init', 'index.js loaded');
 
 const iconOff = Image.resolveAssetSource(require('./assets/icon/icon_off.png')).uri;
-const iconOn = Image.resolveAssetSource(require('./assets/icon/icon_on.png')).uri;
 
-/**
- * Whether the TCP relay is currently active.
- * Set optimistically before any await to prevent double-tap re-entry.
- */
-let active = false;
+// ---------------------------------------------------------------------------
+// Button registration
+// ---------------------------------------------------------------------------
 
-/**
- * Registers (or re-registers) the main sidebar toggle button.
- * enable:true is required — default is false (disabled/greyed out).
- * Re-registration requires a preceding unregisterButton(100) call.
- *
- * @param {string} icon - Resolved asset URI for the button icon.
- */
 function registerMainButton(icon) {
   PluginManager.registerButton(1, ['NOTE', 'DOC'], {
     id: 100,
@@ -82,115 +47,34 @@ function registerMainButton(icon) {
   });
 }
 
-/**
- * Starts the TCP relay and transitions the UI to the active state.
- *
- * Sequence:
- *  1. Set active=true immediately to block re-entry on rapid double-tap.
- *  2. Load persisted host/port configuration from native storage.
- *  3. Call TcpTunnelModule.startTunnel.
- *  4. Swap the toolbar icon to iconOn.
- *
- * On error: active is reverted to false.
- *
- * @returns {Promise<void>}
- */
-async function activate() {
-  log('activate', 'activate() called — setting active=true');
-  active = true;
-  try {
-    log('activate', 'Loading config from native...');
-    const config = await TcpTunnelModule.loadConfig();
-    log('activate', `Config loaded: host=${config.host} port=${config.port}`);
-    log('activate', `Calling startTunnel: host=${config.host} port=${config.port} listenPort=${LISTEN_PORT}`);
-    await TcpTunnelModule.startTunnel(config.host, config.port, LISTEN_PORT);
-    log('activate', 'startTunnel succeeded — swapping icon to ON');
-    PluginManager.unregisterButton(100);
-    registerMainButton(iconOn);
-    ToastAndroid.show('Tunnel acceso ✓', ToastAndroid.SHORT);
-    log('activate', 'activate() SUCCESS — tunnel active');
-  } catch (e) {
-    active = false;
-    log('activate', `activate() FAILED — reverting active=false — error: ${e?.message ?? e}`);
-    console.error('activate failed', e);
-  }
-}
-
-/**
- * Stops the TCP relay and transitions the UI to the inactive state.
- *
- * Sequence:
- *  1. Set active=false immediately to block re-entry on rapid double-tap.
- *  2. Call TcpTunnelModule.stopTunnel.
- *  3. Swap the toolbar icon back to iconOff.
- *
- * On error: active is reverted to true.
- *
- * @returns {Promise<void>}
- */
-async function deactivate() {
-  log('deactivate', 'deactivate() called — setting active=false');
-  active = false;
-  try {
-    log('deactivate', 'Calling stopTunnel...');
-    await TcpTunnelModule.stopTunnel();
-    log('deactivate', 'stopTunnel succeeded — swapping icon to OFF');
-    PluginManager.unregisterButton(100);
-    registerMainButton(iconOff);
-    ToastAndroid.show('Tunnel spento', ToastAndroid.SHORT);
-    log('deactivate', 'deactivate() SUCCESS — tunnel stopped');
-  } catch (e) {
-    active = true;
-    log('deactivate', `deactivate() FAILED — reverting active=true — error: ${e?.message ?? e}`);
-    console.error('deactivate failed', e);
-  }
-}
-
 // ---------------------------------------------------------------------------
-// Button click handlers
+// Button click — open control panel
 // ---------------------------------------------------------------------------
 
-/**
- * Main sidebar button (id=100): toggle relay on/off.
- * Clicks arrive via onButtonPress(event) where event.id identifies the button.
- */
 PluginManager.registerButtonListener({
   onButtonPress: event => {
-    log('button', `Button pressed: id=${event.id} name=${event.name}`);
+    log('button', `Button pressed: id=${event.id}`);
     if (event.id === 100) {
-      if (active) {
-        deactivate();
-      } else {
-        activate();
-      }
+      PluginManager.showPluginView();
     }
   },
 });
 
-
 // ---------------------------------------------------------------------------
-// USB disconnect auto-stop
+// USB disconnect — stop tunnel without user interaction
 // ---------------------------------------------------------------------------
 
-/**
- * When the USB cable is removed while the relay is active, the Kotlin BroadcastReceiver
- * emits "onUsbDisconnect". The relay is stopped here (not in Kotlin) so the teardown
- * path is identical to a manual button press and testable without a physical device.
- */
 emitter.addListener('onUsbDisconnect', () => {
-  log('USB', `onUsbDisconnect event received — active=${active}`);
-  if (active) {
-    log('USB', 'Tunnel active on USB disconnect — calling deactivate()');
-    deactivate();
-  } else {
-    log('USB', 'Tunnel already inactive — no-op');
-  }
+  log('USB', 'USB disconnected — stopping tunnel');
+  TcpTunnelModule.stopTunnel()
+    .then(() => log('USB', 'stopTunnel SUCCESS after USB disconnect'))
+    .catch(e => log('USB', `stopTunnel error: ${e?.message ?? e}`));
 });
 
 // ---------------------------------------------------------------------------
 // Initial registration
 // ---------------------------------------------------------------------------
 
-log('init', 'Registering buttons...');
+log('init', 'Registering main button...');
 registerMainButton(iconOff);
-log('init', 'Buttons registered — plugin ready');
+log('init', 'Plugin ready');
