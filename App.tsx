@@ -285,6 +285,22 @@ function SettingsScreen({host, port, onHostChange, onPortChange, onSave, onBack,
         placeholderTextColor="#888"
       />
 
+      <Text style={styles.label}>Preset porta</Text>
+      <View style={styles.presetRow}>
+        {([
+          {p: '8080', label: 'Screen Mirroring'},
+          {p: '8081', label: 'Browse & Access'},
+        ] as {p: string; label: string}[]).map(({p, label}) => (
+          <TouchableOpacity
+            key={p}
+            style={[styles.presetBtn, port === p && styles.presetBtnActive]}
+            onPress={() => onPortChange(p)}>
+            <Text style={[styles.presetPort, port === p && styles.presetPortActive]}>{p}</Text>
+            <Text style={[styles.presetLabel, port === p && styles.presetLabelActive]}>{label}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
       <Text style={styles.label}>Porta destinazione</Text>
       <TextInput
         style={styles.input}
@@ -384,6 +400,40 @@ const styles = StyleSheet.create({
     fontSize: 14, color: '#000', borderWidth: 1,
     borderColor: '#ccc', borderRadius: 6,
     paddingHorizontal: 10, paddingVertical: 7,
+  },
+  presetRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 6,
+    marginBottom: 4,
+  },
+  presetBtn: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 6,
+    paddingVertical: 8,
+    alignItems: 'center',
+  },
+  presetBtnActive: {
+    backgroundColor: '#000',
+    borderColor: '#000',
+  },
+  presetPort: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#000',
+  },
+  presetPortActive: {
+    color: '#fff',
+  },
+  presetLabel: {
+    fontSize: 10,
+    color: '#555',
+    marginTop: 2,
+  },
+  presetLabelActive: {
+    color: '#ccc',
   },
   saveBtn: {
     marginTop: 20, backgroundColor: '#000',
