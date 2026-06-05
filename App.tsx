@@ -69,7 +69,6 @@ export default function App(): React.JSX.Element {
   // Control screen state
   const [running, setRunning] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [wifiIP, setWifiIP] = useState('');
 
   // Settings screen state
   const [host, setHost] = useState('');
@@ -82,13 +81,11 @@ export default function App(): React.JSX.Element {
     Promise.all([
       TcpTunnelModule.isRunning(),
       TcpTunnelModule.loadConfig(),
-      TcpTunnelModule.getWifiIP().catch(() => ''),
-    ]).then(([r, cfg, ip]: [boolean, {host: string; port: number}, string]) => {
-      log('mount', `isRunning=${r} host=${cfg.host} port=${cfg.port} wifiIP=${ip}`);
+    ]).then(([r, cfg]: [boolean, {host: string; port: number}]) => {
+      log('mount', `isRunning=${r} host=${cfg.host} port=${cfg.port}`);
       setRunning(r);
       setHost(cfg.host);
       setPort(String(cfg.port));
-      setWifiIP(ip);
     }).catch((e: unknown) => {
       log('mount', `init failed: ${String(e)}`);
     });
@@ -181,11 +178,11 @@ export default function App(): React.JSX.Element {
         <ControlScreen
           running={running}
           loading={loading}
-          wifiIP={wifiIP}
           onToggle={handleToggle}
           onSettings={openSettings}
           onClose={() => PluginManager.closePluginView()}
         />
+
       ) : (
         <SettingsScreen
           host={host}
@@ -205,10 +202,9 @@ export default function App(): React.JSX.Element {
 // Control screen
 // ---------------------------------------------------------------------------
 
-function ControlScreen({running, loading, wifiIP, onToggle, onSettings, onClose}: {
+function ControlScreen({running, loading, onToggle, onSettings, onClose}: {
   running: boolean;
   loading: boolean;
-  wifiIP: string;
   onToggle: () => void;
   onSettings: () => void;
   onClose: () => void;
@@ -225,7 +221,6 @@ function ControlScreen({running, loading, wifiIP, onToggle, onSettings, onClose}
       <View style={styles.statusRow}>
         <View style={[styles.dot, running ? styles.dotOn : styles.dotOff]} />
         <Text style={styles.statusText}>{running ? 'ATTIVO' : 'INATTIVO'}</Text>
-        {wifiIP ? <Text style={styles.wifiText}>  {wifiIP}</Text> : null}
       </View>
 
       <TouchableOpacity
@@ -360,7 +355,7 @@ const styles = StyleSheet.create({
   dotOn: {backgroundColor: '#000'},
   dotOff: {backgroundColor: '#fff'},
   statusText: {fontSize: 16, fontWeight: '700', color: '#000'},
-  wifiText: {fontSize: 13, color: '#555'},
+
   toggleBtn: {
     backgroundColor: '#000', borderRadius: 8,
     paddingVertical: 14, alignItems: 'center', marginBottom: 20,
