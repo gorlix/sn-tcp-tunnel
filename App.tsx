@@ -1,11 +1,12 @@
 /**
  * @file App.tsx
- * @description Plugin view for sn-TCP-Tunnel. Renders one of two screens:
+ * @description Plugin view for sn-TCP-Tunnel.
+ * UI follows Supernote design language: black header, square corners,
+ * thin separator lines, black primary buttons with white text.
  *
- *  - 'control': tunnel status, start/stop button, ADB command, link to settings.
- *  - 'settings': host/port form (accessible from gear icon in plugin settings panel).
- *
- * The screen is determined by getViewMode() which index.js sets before showPluginView().
+ * Screens:
+ *  - 'control': status, start/stop, ADB command, link to settings.
+ *  - 'settings': port presets + host/port form.
  */
 
 import React, {useEffect, useRef, useState} from 'react';
@@ -35,7 +36,7 @@ function log(tag: string, msg: string) {
 }
 
 // ---------------------------------------------------------------------------
-// Banner (replaces ToastAndroid — Android 30+ ignores toast gravity)
+// Banner — shows at top for 1.5 s then clears
 // ---------------------------------------------------------------------------
 
 function useBanner() {
@@ -55,25 +56,46 @@ function useBanner() {
 }
 
 // ---------------------------------------------------------------------------
+// Shared header — black bar, boxed X left, centered title
+// ---------------------------------------------------------------------------
+
+function Header({title, onClose, onBack}: {
+  title: string;
+  onClose: () => void;
+  onBack?: () => void;
+}) {
+  return (
+    <View style={styles.header}>
+      <TouchableOpacity style={styles.closeBox} onPress={onClose}>
+        <Text style={styles.closeBoxText}>✕</Text>
+      </TouchableOpacity>
+      <Text style={styles.headerTitle}>{title}</Text>
+      {onBack ? (
+        <TouchableOpacity style={styles.backBox} onPress={onBack}>
+          <Text style={styles.backBoxText}>←</Text>
+        </TouchableOpacity>
+      ) : (
+        <View style={styles.headerSpacer} />
+      )}
+    </View>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // App
 // ---------------------------------------------------------------------------
 
 export default function App(): React.JSX.Element {
   const initialScreen = getViewMode();
   const [screen, setScreen] = useState<'control' | 'settings'>(initialScreen);
-
-  // Control screen state
   const [running, setRunning] = useState(false);
   const [loading, setLoading] = useState(false);
-
-  // Settings screen state
   const [host, setHost] = useState('');
   const [port, setPort] = useState('');
-
   const banner = useBanner();
 
   useEffect(() => {
-    log('mount', `Panel opened — screen=${initialScreen}`);
+    log('mount', `screen=${initialScreen}`);
     Promise.all([
       TcpTunnelModule.isRunning(),
       TcpTunnelModule.loadConfig(),
@@ -82,30 +104,22 @@ export default function App(): React.JSX.Element {
       setRunning(r);
       setHost(cfg.host);
       setPort(String(cfg.port));
-    }).catch((e: unknown) => {
-      log('mount', `init failed: ${String(e)}`);
-    });
+    }).catch((e: unknown) => log('mount', `init failed: ${String(e)}`));
   }, [initialScreen]);
-
-  // ---------------------------------------------------------------------------
-  // Handlers
-  // ---------------------------------------------------------------------------
 
   async function handleToggle() {
     setLoading(true);
     try {
       if (running) {
-        log('toggle', 'Calling stopTunnel...');
         await TcpTunnelModule.stopTunnel();
         setRunning(false);
         PluginManager.unregisterButton(100);
         PluginManager.registerButton(1, ['NOTE', 'DOC'], {
           id: 100, name: 'TCP Tunnel', icon: iconOff, enable: true, expandButton: 0,
         });
-        log('toggle', 'stopTunnel SUCCESS');
+        log('toggle', 'stopTunnel OK');
         banner.show('Tunnel spento');
       } else {
-        log('toggle', `Calling startTunnel: host=${host} port=${port} listenPort=${LISTEN_PORT}`);
         const portNum = parseInt(port, 10);
         await TcpTunnelModule.startTunnel(host.trim(), portNum, LISTEN_PORT);
         setRunning(true);
@@ -113,7 +127,7 @@ export default function App(): React.JSX.Element {
         PluginManager.registerButton(1, ['NOTE', 'DOC'], {
           id: 100, name: 'TCP Tunnel', icon: iconOn, enable: true, expandButton: 0,
         });
-        log('toggle', 'startTunnel SUCCESS');
+        log('toggle', 'startTunnel OK');
         banner.show('Tunnel acceso ✓');
       }
     } catch (e: unknown) {
@@ -123,16 +137,6 @@ export default function App(): React.JSX.Element {
     } finally {
       setLoading(false);
     }
-  }
-
-  function openSettings() {
-    setViewMode('settings');
-    setScreen('settings');
-  }
-
-  function backToControl() {
-    setViewMode('control');
-    setScreen('control');
   }
 
   async function handleSave() {
@@ -146,30 +150,30 @@ export default function App(): React.JSX.Element {
       Alert.alert('Porta non valida', 'La porta deve essere tra 1 e 65535.');
       return;
     }
-    log('save', `Saving: host=${trimmedHost} port=${portNum} running=${running}`);
     if (running) {
       Alert.alert(
         'Tunnel attivo',
-        'Le nuove impostazioni verranno usate al prossimo avvio. Il tunnel corrente resta invariato.',
+        'Le nuove impostazioni verranno usate al prossimo avvio.',
       );
     }
     try {
       await TcpTunnelModule.saveConfig(trimmedHost, portNum);
-      log('save', 'saveConfig SUCCESS');
-      banner.show('Impostazioni salvate', backToControl);
+      log('save', `OK host=${trimmedHost} port=${portNum}`);
+      banner.show('Impostazioni salvate', () => {
+        setViewMode('control');
+        setScreen('control');
+      });
     } catch (e: unknown) {
-      log('save', `saveConfig FAILED: ${String(e)}`);
+      log('save', `FAILED: ${String(e)}`);
       Alert.alert('Errore', 'Impossibile salvare la configurazione.');
     }
   }
 
-  // ---------------------------------------------------------------------------
-  // Render
-  // ---------------------------------------------------------------------------
+  const close = () => PluginManager.closePluginView();
 
   return (
-    <View style={styles.container}>
-      {/* Top notification banner (replaces ToastAndroid — Android 30+ ignores gravity) */}
+    <View style={styles.root}>
+      {/* Banner */}
       {banner.text ? (
         <View style={styles.banner}>
           <Text style={styles.bannerText}>{banner.text}</Text>
@@ -182,10 +186,9 @@ export default function App(): React.JSX.Element {
           loading={loading}
           targetPort={port}
           onToggle={handleToggle}
-          onSettings={openSettings}
-          onClose={() => PluginManager.closePluginView()}
+          onSettings={() => { setViewMode('settings'); setScreen('settings'); }}
+          onClose={close}
         />
-
       ) : (
         <SettingsScreen
           host={host}
@@ -193,8 +196,8 @@ export default function App(): React.JSX.Element {
           onHostChange={setHost}
           onPortChange={setPort}
           onSave={handleSave}
-          onBack={backToControl}
-          onClose={() => PluginManager.closePluginView()}
+          onBack={() => { setViewMode('control'); setScreen('control'); }}
+          onClose={close}
         />
       )}
     </View>
@@ -214,47 +217,55 @@ function ControlScreen({running, loading, targetPort, onToggle, onSettings, onCl
   onClose: () => void;
 }) {
   return (
-    <>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>TCP Tunnel</Text>
-        <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-          <Text style={styles.closeBtnText}>✕</Text>
-        </TouchableOpacity>
-      </View>
+    <View style={styles.screen}>
+      <Header title="TCP Tunnel" onClose={onClose} />
 
-      <View style={styles.statusRow}>
-        <View style={[styles.dot, running ? styles.dotOn : styles.dotOff]} />
-        <Text style={styles.statusText}>{running ? 'ATTIVO' : 'INATTIVO'}</Text>
-      </View>
-
-      <TouchableOpacity
-        style={[styles.toggleBtn, loading && styles.toggleBtnDisabled]}
-        onPress={onToggle}
-        disabled={loading}>
-        <Text style={styles.toggleBtnText}>
-          {loading ? '...' : running ? 'SPEGNI TUNNEL' : 'AVVIA TUNNEL'}
-        </Text>
-      </TouchableOpacity>
-
-      {running && (
-        <View style={styles.adbBox}>
-          <Text style={styles.adbLabel}>Comando PC:</Text>
-          <Text style={styles.adbCommand}>
-            {'adb forward tcp:' + targetPort + ' tcp:' + LISTEN_PORT}
-          </Text>
+      <View style={styles.body}>
+        {/* Status */}
+        <View style={styles.statusRow}>
+          <View style={[styles.dot, running ? styles.dotOn : styles.dotOff]} />
+          <Text style={styles.statusText}>{running ? 'ATTIVO' : 'INATTIVO'}</Text>
         </View>
-      )}
 
-      <TouchableOpacity style={styles.settingsLink} onPress={onSettings}>
-        <Text style={styles.settingsLinkText}>⚙ Impostazioni</Text>
+        {/* Toggle button */}
+        <TouchableOpacity
+          style={[styles.primaryBtn, loading && styles.primaryBtnDisabled]}
+          onPress={onToggle}
+          disabled={loading}>
+          <Text style={styles.primaryBtnIcon}>{loading ? '…' : running ? '◼' : '▶'}</Text>
+          <Text style={styles.primaryBtnText}>
+            {loading ? 'Attendi...' : running ? 'SPEGNI TUNNEL' : 'AVVIA TUNNEL'}
+          </Text>
+        </TouchableOpacity>
+
+        {/* ADB command — only when active */}
+        {running && (
+          <View style={styles.adbBox}>
+            <Text style={styles.adbLabel}>Comando PC</Text>
+            <Text style={styles.adbCommand}>
+              {'adb forward tcp:' + targetPort + ' tcp:' + LISTEN_PORT}
+            </Text>
+          </View>
+        )}
+      </View>
+
+      {/* Settings row — list-style like Supernote */}
+      <TouchableOpacity style={styles.listRow} onPress={onSettings}>
+        <Text style={styles.listRowText}>Impostazioni</Text>
+        <Text style={styles.listRowArrow}>›</Text>
       </TouchableOpacity>
-    </>
+    </View>
   );
 }
 
 // ---------------------------------------------------------------------------
 // Settings screen
 // ---------------------------------------------------------------------------
+
+const PRESETS = [
+  {p: '8080', label: 'Screen Mirroring'},
+  {p: '8081', label: 'Browse & Access'},
+] as const;
 
 function SettingsScreen({host, port, onHostChange, onPortChange, onSave, onBack, onClose}: {
   host: string;
@@ -266,182 +277,189 @@ function SettingsScreen({host, port, onHostChange, onPortChange, onSave, onBack,
   onClose: () => void;
 }) {
   return (
-    <>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={onBack} style={styles.backBtn}>
-          <Text style={styles.backBtnText}>← Indietro</Text>
-        </TouchableOpacity>
-        <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-          <Text style={styles.closeBtnText}>✕</Text>
+    <View style={styles.screen}>
+      <Header title="Impostazioni" onClose={onClose} onBack={onBack} />
+
+      <View style={styles.body}>
+        {/* Presets */}
+        <Text style={styles.fieldLabel}>Preset porta</Text>
+        <View style={styles.presetRow}>
+          {PRESETS.map(({p, label}) => (
+            <TouchableOpacity
+              key={p}
+              style={[styles.presetBtn, port === p && styles.presetBtnActive]}
+              onPress={() => onPortChange(p)}>
+              <Text style={[styles.presetPort, port === p && styles.presetPortActive]}>{p}</Text>
+              <Text style={[styles.presetLabel, port === p && styles.presetLabelActive]}>{label}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        <View style={styles.divider} />
+
+        {/* Host */}
+        <Text style={styles.fieldLabel}>Host destinazione</Text>
+        <TextInput
+          style={styles.input}
+          value={host}
+          onChangeText={onHostChange}
+          autoCapitalize="none"
+          autoCorrect={false}
+          placeholder="100.113.43.44"
+          placeholderTextColor="#888"
+        />
+
+        {/* Port */}
+        <Text style={styles.fieldLabel}>Porta destinazione</Text>
+        <TextInput
+          style={styles.input}
+          value={port}
+          onChangeText={onPortChange}
+          keyboardType="numeric"
+          placeholder="8080"
+          placeholderTextColor="#888"
+        />
+
+        {/* Save */}
+        <TouchableOpacity style={styles.primaryBtn} onPress={onSave}>
+          <Text style={styles.primaryBtnText}>SALVA</Text>
         </TouchableOpacity>
       </View>
-
-      <Text style={styles.settingsTitle}>Impostazioni tunnel</Text>
-
-      <Text style={styles.label}>Host destinazione</Text>
-      <TextInput
-        style={styles.input}
-        value={host}
-        onChangeText={onHostChange}
-        autoCapitalize="none"
-        autoCorrect={false}
-        placeholder="100.113.43.44"
-        placeholderTextColor="#888"
-      />
-
-      <Text style={styles.label}>Preset porta</Text>
-      <View style={styles.presetRow}>
-        {([
-          {p: '8080', label: 'Screen Mirroring'},
-          {p: '8081', label: 'Browse & Access'},
-        ] as {p: string; label: string}[]).map(({p, label}) => (
-          <TouchableOpacity
-            key={p}
-            style={[styles.presetBtn, port === p && styles.presetBtnActive]}
-            onPress={() => onPortChange(p)}>
-            <Text style={[styles.presetPort, port === p && styles.presetPortActive]}>{p}</Text>
-            <Text style={[styles.presetLabel, port === p && styles.presetLabelActive]}>{label}</Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-
-      <Text style={styles.label}>Porta destinazione</Text>
-      <TextInput
-        style={styles.input}
-        value={port}
-        onChangeText={onPortChange}
-        keyboardType="numeric"
-        placeholder="8080"
-        placeholderTextColor="#888"
-      />
-
-      <TouchableOpacity style={styles.saveBtn} onPress={onSave}>
-        <Text style={styles.saveBtnText}>Salva</Text>
-      </TouchableOpacity>
-    </>
+    </View>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Styles
+// Styles — Supernote language: square, black/white, thin separators
 // ---------------------------------------------------------------------------
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-    padding: 20,
-  },
+  root: {flex: 1, backgroundColor: '#fff'},
+
+  // Banner
   banner: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
     backgroundColor: '#000',
     paddingVertical: 10,
     paddingHorizontal: 20,
-    zIndex: 10,
     alignItems: 'center',
   },
-  bannerText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
-  },
+  bannerText: {color: '#fff', fontSize: 14, fontWeight: '600'},
+
+  screen: {flex: 1},
+
+  // Header
   header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 20,
+    backgroundColor: '#000',
+    height: 52,
+    paddingHorizontal: 12,
   },
+  closeBox: {
+    width: 36,
+    height: 32,
+    borderWidth: 1,
+    borderColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  closeBoxText: {color: '#fff', fontSize: 16, fontWeight: '900', lineHeight: 20},
   headerTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#000',
+    flex: 1,
+    textAlign: 'center',
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
-  backBtn: {padding: 6},
-  backBtnText: {fontSize: 14, color: '#000'},
-  closeBtn: {padding: 6},
-  closeBtnText: {fontSize: 18, color: '#000', fontWeight: '700'},
+  headerSpacer: {width: 36},
+  backBox: {
+    width: 36,
+    height: 32,
+    borderWidth: 1,
+    borderColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  backBoxText: {color: '#fff', fontSize: 18, fontWeight: '700', lineHeight: 22},
+
+  // Body
+  body: {flex: 1, paddingHorizontal: 20, paddingTop: 20},
+
+  // Status
   statusRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 24,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#ddd',
+    marginBottom: 20,
   },
-  dot: {
-    width: 14, height: 14, borderRadius: 7,
-    marginRight: 8, borderWidth: 2, borderColor: '#000',
-  },
+  dot: {width: 12, height: 12, borderWidth: 2, borderColor: '#000', marginRight: 10},
   dotOn: {backgroundColor: '#000'},
   dotOff: {backgroundColor: '#fff'},
   statusText: {fontSize: 16, fontWeight: '700', color: '#000'},
 
-  toggleBtn: {
-    backgroundColor: '#000', borderRadius: 8,
-    paddingVertical: 14, alignItems: 'center', marginBottom: 20,
-  },
-  toggleBtnDisabled: {backgroundColor: '#888'},
-  toggleBtnText: {color: '#fff', fontSize: 16, fontWeight: '700', letterSpacing: 0.5},
-  adbBox: {
-    borderWidth: 1, borderColor: '#ccc', borderRadius: 6,
-    padding: 12, marginBottom: 20, backgroundColor: '#f8f8f8',
-  },
-  adbLabel: {fontSize: 11, color: '#888', marginBottom: 4},
-  adbCommand: {fontFamily: 'monospace', fontSize: 13, color: '#000'},
-  settingsLink: {
-    paddingVertical: 10, alignItems: 'center',
-    borderTopWidth: 1, borderTopColor: '#eee',
-  },
-  settingsLinkText: {fontSize: 14, color: '#555'},
-  settingsTitle: {
-    fontSize: 16, fontWeight: '700', color: '#000', marginBottom: 16,
-  },
-  label: {
-    fontSize: 12, fontWeight: '600', color: '#333',
-    marginBottom: 4, marginTop: 12,
-  },
-  input: {
-    fontSize: 14, color: '#000', borderWidth: 1,
-    borderColor: '#ccc', borderRadius: 6,
-    paddingHorizontal: 10, paddingVertical: 7,
-  },
-  presetRow: {
+  // Primary button — black, square, white text
+  primaryBtn: {
+    backgroundColor: '#000',
+    paddingVertical: 16,
     flexDirection: 'row',
-    gap: 10,
-    marginTop: 6,
-    marginBottom: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
   },
+  primaryBtnDisabled: {backgroundColor: '#555'},
+  primaryBtnIcon: {color: '#fff', fontSize: 14, marginRight: 10},
+  primaryBtnText: {color: '#fff', fontSize: 15, fontWeight: '700', letterSpacing: 0.5},
+
+  // ADB box
+  adbBox: {
+    borderWidth: 1,
+    borderColor: '#000',
+    padding: 14,
+    marginBottom: 20,
+  },
+  adbLabel: {fontSize: 11, color: '#555', marginBottom: 6, fontWeight: '600'},
+  adbCommand: {fontFamily: 'monospace', fontSize: 13, color: '#000'},
+
+  // List row (settings link) — full width, bottom border
+  listRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 18,
+    borderTopWidth: 1,
+    borderTopColor: '#ddd',
+  },
+  listRowText: {fontSize: 15, color: '#000'},
+  listRowArrow: {fontSize: 20, color: '#000'},
+
+  // Settings fields
+  divider: {height: 1, backgroundColor: '#ddd', marginVertical: 16},
+  fieldLabel: {fontSize: 13, color: '#555', marginBottom: 8, fontWeight: '600'},
+  input: {
+    fontSize: 15,
+    color: '#000',
+    borderWidth: 1,
+    borderColor: '#000',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 16,
+  },
+
+  // Presets — square buttons
+  presetRow: {flexDirection: 'row', gap: 12, marginBottom: 8},
   presetBtn: {
     flex: 1,
     borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 6,
-    paddingVertical: 8,
+    borderColor: '#000',
+    paddingVertical: 10,
     alignItems: 'center',
   },
-  presetBtnActive: {
-    backgroundColor: '#000',
-    borderColor: '#000',
-  },
-  presetPort: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#000',
-  },
-  presetPortActive: {
-    color: '#fff',
-  },
-  presetLabel: {
-    fontSize: 10,
-    color: '#555',
-    marginTop: 2,
-  },
-  presetLabelActive: {
-    color: '#ccc',
-  },
-  saveBtn: {
-    marginTop: 20, backgroundColor: '#000',
-    borderRadius: 6, paddingVertical: 12, alignItems: 'center',
-  },
-  saveBtnText: {color: '#fff', fontSize: 14, fontWeight: '600'},
+  presetBtnActive: {backgroundColor: '#000'},
+  presetPort: {fontSize: 14, fontWeight: '700', color: '#000'},
+  presetPortActive: {color: '#fff'},
+  presetLabel: {fontSize: 10, color: '#555', marginTop: 3},
+  presetLabelActive: {color: '#ccc'},
 });
