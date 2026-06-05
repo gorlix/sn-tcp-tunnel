@@ -307,6 +307,18 @@ function ControlScreen({running, loading, targetPort, listenPort, onToggle, onSe
           <Text style={styles.listRowArrow}>›</Text>
         </TouchableOpacity>
 
+        {/* Prerequisite hint — shown only when inactive */}
+        {!running && (
+          <View style={styles.hintBox}>
+            <Text style={styles.hintText}>
+              Prima di avviare, attiva{'\n'}
+              <Text style={styles.hintBold}>Screen Mirroring</Text> o{' '}
+              <Text style={styles.hintBold}>File Access</Text>
+              {'\n'}dalla barra toggle in alto.
+            </Text>
+          </View>
+        )}
+
         {/* ADB command — only when active */}
         {running && (
           <View style={styles.adbBox}>
@@ -496,6 +508,16 @@ const styles = StyleSheet.create({
   },
   adbLabel: {fontSize: 11, color: '#555', marginBottom: 6, fontWeight: '600'},
   adbCommand: {fontFamily: 'monospace', fontSize: 13, color: '#000'},
+
+  // Prerequisite hint
+  hintBox: {
+    marginTop: 16,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    padding: 14,
+  },
+  hintText: {fontSize: 13, color: '#555', lineHeight: 20},
+  hintBold: {fontWeight: '700', color: '#000'},
 
   // List row (settings link) — full width, bottom border
   listRow: {
