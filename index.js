@@ -24,7 +24,7 @@
  *  - PluginButton.enable must be true for the button to be interactive
  */
 
-import {AppRegistry, Image, NativeModules, NativeEventEmitter} from 'react-native';
+import {AppRegistry, Image, NativeModules, NativeEventEmitter, ToastAndroid} from 'react-native';
 import App from './App';
 import {name as appName} from './app.json';
 import {PluginManager} from 'sn-plugin-lib';
@@ -107,6 +107,7 @@ async function activate() {
     log('activate', 'startTunnel succeeded — swapping icon to ON');
     PluginManager.unregisterButton(100);
     registerMainButton(iconOn);
+    ToastAndroid.show('Tunnel acceso ✓', ToastAndroid.SHORT);
     log('activate', 'activate() SUCCESS — tunnel active');
   } catch (e) {
     active = false;
@@ -136,6 +137,7 @@ async function deactivate() {
     log('deactivate', 'stopTunnel succeeded — swapping icon to OFF');
     PluginManager.unregisterButton(100);
     registerMainButton(iconOff);
+    ToastAndroid.show('Tunnel spento', ToastAndroid.SHORT);
     log('deactivate', 'deactivate() SUCCESS — tunnel stopped');
   } catch (e) {
     active = true;
@@ -165,16 +167,6 @@ PluginManager.registerButtonListener({
   },
 });
 
-/**
- * Config button (gear icon in plugin settings panel): opens the App.tsx
- * configuration view. Registered separately via registerConfigButton().
- */
-PluginManager.registerConfigButtonListener({
-  onClick: () => {
-    log('button', 'Config button pressed — showing plugin view');
-    PluginManager.showPluginView();
-  },
-});
 
 // ---------------------------------------------------------------------------
 // USB disconnect auto-stop
@@ -201,5 +193,4 @@ emitter.addListener('onUsbDisconnect', () => {
 
 log('init', 'Registering buttons...');
 registerMainButton(iconOff);
-PluginManager.registerConfigButton();
 log('init', 'Buttons registered — plugin ready');

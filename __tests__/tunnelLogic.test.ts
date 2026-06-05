@@ -14,7 +14,6 @@ const mockStopTunnel = jest.fn().mockResolvedValue(null);
 const mockUnregisterButton = jest.fn();
 const mockRegisterButton = jest.fn();
 const mockRegisterButtonListener = jest.fn();
-const mockRegisterConfigButtonListener = jest.fn();
 
 const eventListeners: Record<string, ((...args: unknown[]) => void)[]> = {};
 
@@ -29,9 +28,6 @@ jest.mock('sn-plugin-lib', () => ({
     registerButton: mockRegisterButton,
     unregisterButton: mockUnregisterButton,
     registerButtonListener: mockRegisterButtonListener,
-    registerConfigButtonListener: mockRegisterConfigButtonListener,
-    registerConfigButton: jest.fn().mockResolvedValue(true),
-    showPluginView: jest.fn(),
     closePluginView: jest.fn(),
   },
 }));
@@ -39,6 +35,7 @@ jest.mock('sn-plugin-lib', () => ({
 jest.mock('react-native', () => ({
   AppRegistry: {registerComponent: jest.fn()},
   Image: {resolveAssetSource: jest.fn(() => ({uri: 'mock://icon'}))},
+  ToastAndroid: {show: jest.fn(), SHORT: 2000},
   NativeModules: {
     TcpTunnelModule: {
       loadConfig: (...args: unknown[]) => mockLoadConfig(...args),
