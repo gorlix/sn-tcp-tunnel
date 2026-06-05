@@ -66,48 +66,26 @@ import java.util.concurrent.atomic.AtomicBoolean
 class TcpTunnelModule(private val ctx: ReactApplicationContext) : ReactContextBaseJavaModule(ctx) {
 
     companion object {
-        /** Android notification channel identifier for the persistent tunnel notification. */
         private const val CHANNEL_ID = "tcp_tunnel"
-
-        /** Stable notification ID; using a fixed ID ensures only one notification exists at a time. */
         private const val NOTIF_ID = 1
-
-        /** Filename for the JSON configuration stored in [android.content.Context.getFilesDir]. */
         private const val CONFIG_FILE = "tunnel_config.json"
-
-        /** Fallback remote host when no saved configuration is present. */
         private const val DEFAULT_HOST = "100.113.43.44"
-
-        /** Fallback remote port when no saved configuration is present. */
         private const val DEFAULT_PORT = 8080
+        private const val TAG = "TcpTunnelModule"
     }
 
-    /**
-     * Indicates whether the TCP relay is currently accepting connections.
-     * Written from the JS thread; read from both the JS thread and the accept-loop thread.
-     */
     private val running = AtomicBoolean(false)
-
-    /** Server socket bound to [listenPort]. Null when the relay is stopped. */
     private var serverSocket: ServerSocket? = null
-
-    /**
-     * Thread pool managing the accept-loop and all per-connection pipe threads.
-     * Uses a cached pool so that threads are reused across short-lived connections.
-     */
     private var executor: ExecutorService? = null
-
-    /**
-     * Receiver that listens for [android.hardware.usb.action.USB_STATE] broadcasts.
-     * Registered on tunnel start; unregistered on tunnel stop. Null when unregistered.
-     */
     private var usbReceiver: BroadcastReceiver? = null
 
-    /**
-     * Returns the module name exposed to the JavaScript layer via [NativeModules].
-     *
-     * @return The string "TcpTunnelModule".
-     */
+    init {
+        TunnelLogger.init(ctx)
+        TunnelLogger.i(TAG, "TcpTunnelModule instantiated")
+        TunnelLogger.i(TAG, "Log path: ${TunnelLogger.getLogPath()}")
+        TunnelLogger.i(TAG, "Config file: ${File(ctx.filesDir, CONFIG_FILE).absolutePath}")
+    }
+
     override fun getName() = "TcpTunnelModule"
 
     // -------------------------------------------------------------------------
@@ -116,16 +94,11 @@ class TcpTunnelModule(private val ctx: ReactApplicationContext) : ReactContextBa
 
     /**
      * Resolves the device's current IPv4 address on the active WiFi interface.
-     *
-     * The address is formatted as a dotted-decimal string (e.g. "192.168.1.42").
-     * The raw integer returned by [WifiManager] is stored in little-endian byte order,
-     * hence the explicit byte extraction rather than [java.net.InetAddress.getByAddress].
-     *
-     * @param promise Resolved with the IP string, or rejected with code "WIFI_ERROR"
-     *                if WiFi is unavailable or an exception occurs.
      */
     @ReactMethod
+    @Suppress("DEPRECATION") // WifiManager.connectionInfo deprecated in API 31; Supernote targets API 30.
     fun getWifiIP(promise: Promise) {
+        TunnelLogger.i(TAG, "getWifiIP called")
         try {
             val wm = ctx.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
             val ip = wm.connectionInfo.ipAddress
@@ -135,227 +108,222 @@ class TcpTunnelModule(private val ctx: ReactApplicationContext) : ReactContextBa
                 ip shr 16 and 0xff,
                 ip shr 24 and 0xff,
             )
+            TunnelLogger.i(TAG, "getWifiIP result: $formatted")
             promise.resolve(formatted)
         } catch (e: Exception) {
+            TunnelLogger.e(TAG, "getWifiIP failed", e)
             promise.reject("WIFI_ERROR", e.message)
         }
     }
 
     /**
      * Starts the TCP relay.
-     *
-     * Binds a [ServerSocket] on [listenPort] and spawns an accept-loop on the thread pool.
-     * Each accepted connection is handled by [handleConnection] on a separate pool thread.
-     * If the relay is already running this method is a no-op and resolves immediately.
-     *
-     * Side effects:
-     * - Posts an ongoing status notification (see [showNotification]).
-     * - Registers the USB disconnect receiver (see [registerUsbReceiver]).
-     *
-     * @param host       Remote hostname or IP to forward connections to.
-     * @param port       Remote port to connect to for each accepted client.
-     * @param listenPort Local port on which the [ServerSocket] will bind.
-     * @param promise    Resolved with null on success, or rejected with code "START_ERROR"
-     *                   if the socket cannot be bound (e.g. port already in use).
      */
     @ReactMethod
     fun startTunnel(host: String, port: Int, listenPort: Int, promise: Promise) {
+        TunnelLogger.i(TAG, "startTunnel called: host=$host port=$port listenPort=$listenPort")
         if (running.get()) {
+            TunnelLogger.i(TAG, "startTunnel no-op: already running")
             promise.resolve(null)
             return
         }
         try {
+            TunnelLogger.i(TAG, "Binding ServerSocket on port $listenPort...")
             val ss = ServerSocket(listenPort)
             serverSocket = ss
+            TunnelLogger.i(TAG, "ServerSocket bound on port $listenPort — local address: ${ss.localSocketAddress}")
             running.set(true)
-            executor = Executors.newCachedThreadPool()
-            executor!!.submit {
+            // Capture executor in a local val so the accept-loop closure holds a
+            // stable non-null reference. stopTunnel() nulls out the field from the
+            // JS thread; without this capture, executor!! in the loop body could
+            // race with that write and throw KotlinNullPointerException.
+            val localExec = Executors.newCachedThreadPool()
+            executor = localExec
+            TunnelLogger.i(TAG, "Thread pool created")
+            localExec.submit {
+                TunnelLogger.i(TAG, "Accept-loop started — waiting for connections on port $listenPort")
                 while (running.get()) {
                     try {
                         val client = ss.accept()
-                        executor!!.submit { handleConnection(client, host, port) }
-                    } catch (_: Exception) {
-                        // ServerSocket.close() throws here when stopTunnel() is called;
-                        // exit the loop cleanly.
+                        val remote = client.remoteSocketAddress
+                        TunnelLogger.i(TAG, "Connection accepted from $remote")
+                        localExec.submit { handleConnection(client, host, port) }
+                    } catch (e: Exception) {
+                        if (running.get()) {
+                            TunnelLogger.e(TAG, "Accept-loop error (unexpected)", e)
+                        } else {
+                            TunnelLogger.i(TAG, "Accept-loop terminated (stopTunnel called)")
+                        }
                         break
                     }
                 }
+                TunnelLogger.i(TAG, "Accept-loop exited")
             }
             showNotification(host, port, listenPort)
+            TunnelLogger.i(TAG, "Notification posted")
             registerUsbReceiver()
+            TunnelLogger.i(TAG, "USB receiver registered")
+            TunnelLogger.i(TAG, "startTunnel SUCCESS — relay active on *:$listenPort → $host:$port")
             promise.resolve(null)
         } catch (e: Exception) {
             running.set(false)
+            TunnelLogger.e(TAG, "startTunnel FAILED", e)
             promise.reject("START_ERROR", e.message)
         }
     }
 
     /**
-     * Stops the TCP relay.
-     *
-     * Closes the [ServerSocket] (which interrupts the accept-loop), shuts down the
-     * thread pool (in-flight pipe threads are interrupted), dismisses the notification,
-     * and unregisters the USB receiver. This method is idempotent.
-     *
-     * @param promise Always resolved with null; never rejected.
+     * Stops the TCP relay. Idempotent.
      */
     @ReactMethod
     fun stopTunnel(promise: Promise) {
+        TunnelLogger.i(TAG, "stopTunnel called — running=${running.get()}")
         running.set(false)
-        try { serverSocket?.close() } catch (_: Exception) {}
+        try { serverSocket?.close(); TunnelLogger.i(TAG, "ServerSocket closed") } catch (e: Exception) { TunnelLogger.e(TAG, "ServerSocket close error", e) }
         serverSocket = null
         executor?.shutdownNow()
+        TunnelLogger.i(TAG, "Thread pool shut down")
         executor = null
         dismissNotification()
+        TunnelLogger.i(TAG, "Notification dismissed")
         unregisterUsbReceiver()
+        TunnelLogger.i(TAG, "USB receiver unregistered")
+        TunnelLogger.i(TAG, "stopTunnel SUCCESS")
         promise.resolve(null)
     }
 
     /**
      * Returns whether the TCP relay is currently active.
-     *
-     * @param promise Resolved with [Boolean] true if running, false otherwise.
      */
     @ReactMethod
     fun isRunning(promise: Promise) {
-        promise.resolve(running.get())
+        val state = running.get()
+        TunnelLogger.d(TAG, "isRunning → $state")
+        promise.resolve(state)
     }
 
     /**
      * Persists the tunnel target configuration to internal storage.
-     *
-     * Configuration is written as JSON to [CONFIG_FILE] inside [android.content.Context.getFilesDir].
-     * The file is not world-readable; no additional encryption is applied because the
-     * stored values (host and port) are not credentials.
-     *
-     * @param host    Remote hostname or IP to store.
-     * @param port    Remote port number to store.
-     * @param promise Resolved with null on success, or rejected with code "SAVE_ERROR".
      */
     @ReactMethod
     fun saveConfig(host: String, port: Int, promise: Promise) {
+        TunnelLogger.i(TAG, "saveConfig called: host=$host port=$port")
         try {
             val json = JSONObject().apply {
                 put("host", host)
                 put("port", port)
             }
-            File(ctx.filesDir, CONFIG_FILE).writeText(json.toString())
+            val f = File(ctx.filesDir, CONFIG_FILE)
+            f.writeText(json.toString())
+            TunnelLogger.i(TAG, "saveConfig SUCCESS — written to ${f.absolutePath}")
             promise.resolve(null)
         } catch (e: Exception) {
+            TunnelLogger.e(TAG, "saveConfig FAILED", e)
             promise.reject("SAVE_ERROR", e.message)
         }
     }
 
     /**
      * Reads the tunnel target configuration from internal storage.
-     *
-     * If no configuration file exists, the returned map contains the compile-time
-     * defaults ([DEFAULT_HOST] and [DEFAULT_PORT]).
-     *
-     * @param promise Resolved with a ReadableMap containing keys "host" (String)
-     *                and "port" (Int), or rejected with code "LOAD_ERROR".
      */
     @ReactMethod
     fun loadConfig(promise: Promise) {
+        TunnelLogger.i(TAG, "loadConfig called")
         try {
             val file = File(ctx.filesDir, CONFIG_FILE)
-            val json = if (file.exists()) JSONObject(file.readText()) else JSONObject()
+            TunnelLogger.i(TAG, "Config file exists: ${file.exists()} — path: ${file.absolutePath}")
+            val json = if (file.exists()) {
+                val text = file.readText()
+                TunnelLogger.d(TAG, "Config file content: $text")
+                JSONObject(text)
+            } else {
+                TunnelLogger.i(TAG, "No config file — using defaults (host=$DEFAULT_HOST port=$DEFAULT_PORT)")
+                JSONObject()
+            }
+            val host = json.optString("host", DEFAULT_HOST)
+            val port = json.optInt("port", DEFAULT_PORT)
+            TunnelLogger.i(TAG, "loadConfig result: host=$host port=$port")
             val map = Arguments.createMap().apply {
-                putString("host", json.optString("host", DEFAULT_HOST))
-                putInt("port", json.optInt("port", DEFAULT_PORT))
+                putString("host", host)
+                putInt("port", port)
             }
             promise.resolve(map)
         } catch (e: Exception) {
+            TunnelLogger.e(TAG, "loadConfig FAILED", e)
             promise.reject("LOAD_ERROR", e.message)
         }
     }
 
     /**
-     * Required stub for [com.facebook.react.modules.core.RCTNativeAppEventEmitter] contract.
-     * React Native calls this when the JS side adds a listener via [NativeEventEmitter].
-     *
-     * @param eventName Name of the event being subscribed to (e.g. "onUsbDisconnect").
+     * Writes a log entry from the JS layer to the same log file.
+     * Called via TcpTunnelModule.writeLog(message) from index.js / App.tsx.
      */
     @ReactMethod
-    fun addListener(eventName: String) {}
+    fun writeLog(message: String, promise: Promise) {
+        TunnelLogger.js(message)
+        promise.resolve(null)
+    }
 
     /**
-     * Required stub for [com.facebook.react.modules.core.RCTNativeAppEventEmitter] contract.
-     * React Native calls this when all JS listeners for an event are removed.
-     *
-     * @param count Number of listeners being removed.
+     * Returns the absolute path of the active log file.
+     * Useful for the user to know where to find the log on the device.
      */
     @ReactMethod
-    fun removeListeners(count: Int) {}
+    fun getLogPath(promise: Promise) {
+        promise.resolve(TunnelLogger.getLogPath())
+    }
+
+    @ReactMethod
+    fun addListener(eventName: String) {
+        TunnelLogger.d(TAG, "addListener: $eventName")
+    }
+
+    @ReactMethod
+    fun removeListeners(count: Int) {
+        TunnelLogger.d(TAG, "removeListeners: count=$count")
+    }
 
     // -------------------------------------------------------------------------
     // Private implementation
     // -------------------------------------------------------------------------
 
-    /**
-     * Handles a single accepted client connection.
-     *
-     * Opens an outbound [Socket] to [host]:[port] and starts two threads — one for
-     * each direction — that copy bytes until the connection is closed or an error
-     * occurs. Both threads are joined before the method returns, ensuring the sockets
-     * are released promptly.
-     *
-     * Exceptions (connection refused, peer reset, etc.) are silently swallowed because
-     * individual connection failures should not affect the overall relay lifecycle.
-     *
-     * @param client The inbound [Socket] accepted from the [ServerSocket].
-     * @param host   Remote hostname or IP to connect to.
-     * @param port   Remote port to connect to.
-     */
     private fun handleConnection(client: Socket, host: String, port: Int) {
+        val remote = client.remoteSocketAddress
+        TunnelLogger.i(TAG, "handleConnection start: $remote → $host:$port")
         try {
             Socket(host, port).use { target ->
+                TunnelLogger.i(TAG, "Target socket connected to $host:$port for client $remote")
                 client.use {
-                    val t1 = Thread { pipe(client.inputStream, target.outputStream) }
-                    val t2 = Thread { pipe(target.inputStream, client.outputStream) }
+                    val t1 = Thread { pipe(client.inputStream, target.outputStream, "client→target [$remote]") }
+                    val t2 = Thread { pipe(target.inputStream, client.outputStream, "target→client [$remote]") }
                     t1.start(); t2.start()
+                    TunnelLogger.d(TAG, "Pipe threads started for $remote")
                     t1.join(); t2.join()
+                    TunnelLogger.i(TAG, "handleConnection done: $remote — both pipe threads finished")
                 }
             }
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            TunnelLogger.e(TAG, "handleConnection error for $remote", e)
+        }
     }
 
-    /**
-     * Copies bytes from [input] to [output] until end-of-stream or an I/O error.
-     *
-     * Uses an 8 KiB heap buffer, which balances per-read syscall overhead against
-     * heap pressure. Output is flushed after every write to avoid stalling the
-     * remote peer behind a partially-filled buffer.
-     *
-     * Exceptions (peer closed the connection, socket interrupted by [stopTunnel], etc.)
-     * are silently swallowed; the caller detects termination via thread join.
-     *
-     * @param input  Source stream to read from.
-     * @param output Destination stream to write to.
-     */
-    private fun pipe(input: InputStream, output: OutputStream) {
+    private fun pipe(input: InputStream, output: OutputStream, direction: String) {
+        TunnelLogger.d(TAG, "pipe start: $direction")
+        var totalBytes = 0L
         try {
             val buf = ByteArray(8192)
             var n: Int
             while (input.read(buf).also { n = it } != -1) {
                 output.write(buf, 0, n)
                 output.flush()
+                totalBytes += n
             }
-        } catch (_: Exception) {}
+            TunnelLogger.d(TAG, "pipe end-of-stream: $direction — total ${totalBytes}B")
+        } catch (e: Exception) {
+            TunnelLogger.d(TAG, "pipe closed: $direction — total ${totalBytes}B — ${e.javaClass.simpleName}: ${e.message}")
+        }
     }
 
-    /**
-     * Posts or updates the persistent foreground-style notification that indicates the
-     * relay is active.
-     *
-     * On API 26+ a low-importance notification channel is created if it does not already
-     * exist (the call is idempotent). The notification is marked [ongoing][android.app.Notification.FLAG_ONGOING_EVENT]
-     * so the user cannot swipe it away while the relay is running.
-     *
-     * @param host       Remote hostname displayed in the notification body.
-     * @param port       Remote port displayed in the notification body.
-     * @param listenPort Local listen port displayed in the notification body.
-     */
     private fun showNotification(host: String, port: Int, listenPort: Int) {
         val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -372,27 +340,18 @@ class TcpTunnelModule(private val ctx: ReactApplicationContext) : ReactContextBa
         nm.notify(NOTIF_ID, notif)
     }
 
-    /**
-     * Cancels the persistent tunnel notification posted by [showNotification].
-     */
     private fun dismissNotification() {
         val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         nm.cancel(NOTIF_ID)
     }
 
-    /**
-     * Registers a [BroadcastReceiver] for [android.hardware.usb.action.USB_STATE].
-     *
-     * When the USB cable is disconnected ([connected] extra is false) and the relay is
-     * active, the receiver emits the "onUsbDisconnect" event to the JS layer, which is
-     * responsible for calling [stopTunnel]. This decoupling ensures the teardown sequence
-     * remains in JavaScript and is testable without a physical device.
-     */
     private fun registerUsbReceiver() {
         usbReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
                 val connected = intent.getBooleanExtra("connected", false)
+                TunnelLogger.i(TAG, "USB_STATE broadcast received: connected=$connected running=${running.get()}")
                 if (!connected && running.get()) {
+                    TunnelLogger.i(TAG, "USB disconnected while tunnel active — emitting onUsbDisconnect to JS")
                     ctx.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
                         .emit("onUsbDisconnect", null)
                 }
@@ -401,15 +360,9 @@ class TcpTunnelModule(private val ctx: ReactApplicationContext) : ReactContextBa
         ctx.registerReceiver(usbReceiver, IntentFilter("android.hardware.usb.action.USB_STATE"))
     }
 
-    /**
-     * Unregisters the USB state [BroadcastReceiver] previously registered by [registerUsbReceiver].
-     *
-     * Exceptions from [Context.unregisterReceiver] (e.g. receiver was never registered due to
-     * an earlier failure) are suppressed to keep [stopTunnel] unconditionally safe to call.
-     */
     private fun unregisterUsbReceiver() {
         usbReceiver?.let {
-            try { ctx.unregisterReceiver(it) } catch (_: Exception) {}
+            try { ctx.unregisterReceiver(it) } catch (e: Exception) { TunnelLogger.e(TAG, "unregisterReceiver error", e) }
             usbReceiver = null
         }
     }
