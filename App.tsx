@@ -7,6 +7,8 @@
  * Screens:
  *  - 'control': status, start/stop, ADB command, link to settings.
  *  - 'settings': port presets + host/port form.
+ *
+ * Language: resolved from Intl on mount, updated live via registerLangListener.
  */
 
 import React, {useEffect, useRef, useState} from 'react';
@@ -24,6 +26,13 @@ import {
 import {PluginManager} from 'sn-plugin-lib';
 import {isValidPort} from './src/validation';
 import {getViewMode, setViewMode} from './src/viewMode';
+import {
+  type Locale,
+  type Strings,
+  getCurrentLocale,
+  getStrings,
+  normaliseLocale,
+} from './src/i18n';
 
 const {TcpTunnelModule} = NativeModules;
 
@@ -57,12 +66,13 @@ function useBanner() {
 }
 
 // ---------------------------------------------------------------------------
-// Shared header — black bar, boxed X left, centered title
+// Shared header — black bar, X left, centered title, optional back right
 // ---------------------------------------------------------------------------
 
-function Header({title, onClose, onBack}: {
+function Header({title, onClose, backLabel, onBack}: {
   title: string;
   onClose: () => void;
+  backLabel?: string;
   onBack?: () => void;
 }) {
   return (
@@ -73,7 +83,7 @@ function Header({title, onClose, onBack}: {
       <Text style={styles.headerTitle}>{title}</Text>
       {onBack ? (
         <TouchableOpacity style={styles.backBox} onPress={onBack}>
-          <Text style={styles.backBoxText}>Indietro</Text>
+          <Text style={styles.backBoxText}>{backLabel ?? 'Back'}</Text>
         </TouchableOpacity>
       ) : (
         <View style={styles.headerSpacer} />
@@ -89,12 +99,15 @@ function Header({title, onClose, onBack}: {
 export default function App(): React.JSX.Element {
   const initialScreen = getViewMode();
   const [screen, setScreen] = useState<'control' | 'settings'>(initialScreen);
+  const [locale, setLocale] = useState<Locale>(getCurrentLocale);
   const [running, setRunning] = useState(false);
   const [loading, setLoading] = useState(false);
   const [host, setHost] = useState('');
   const [port, setPort] = useState('');
   const [listenPort, setListenPort] = useState(DEFAULT_LISTEN_PORT);
   const banner = useBanner();
+
+  const s: Strings = getStrings(locale);
 
   function loadState() {
     Promise.all([
@@ -109,18 +122,14 @@ export default function App(): React.JSX.Element {
     }).catch((e: unknown) => log('state', `load failed: ${String(e)}`));
   }
 
-  // Load state once on first mount.
+  // Load state on first mount.
   useEffect(() => {
-    log('mount', `initial screen=${initialScreen}`);
+    log('mount', `screen=${initialScreen} locale=${locale}`);
     loadState();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Reset screen every time index.js calls showPluginView().
-  // index.js emits 'tunnelViewMode' just after showPluginView() — both run in the
-  // same JS runtime so this event arrives while the component is still mounted.
-  // PluginLifeListener.onStart() does NOT fire on each showPluginView() call,
-  // only on plugin JS initialisation, so DeviceEventEmitter is used instead.
+  // Reset screen each time index.js calls showPluginView().
   useEffect(() => {
     const sub = DeviceEventEmitter.addListener(
       'tunnelViewMode',
@@ -133,16 +142,32 @@ export default function App(): React.JSX.Element {
     return () => sub.remove();
   }, []);
 
+  // Update locale when Supernote system language changes.
+  useEffect(() => {
+    const sub = PluginManager.registerLangListener({
+      onMsg: (msg: unknown) => {
+        const next = normaliseLocale(msg);
+        log('i18n', `lang changed: ${String(msg)} → ${next}`);
+        setLocale(next);
+      },
+    });
+    return () => sub.remove();
+  }, []);
+
+  // ---------------------------------------------------------------------------
+  // Handlers
+  // ---------------------------------------------------------------------------
+
   async function startTunnel(portNum: number) {
     const lp = parseInt(listenPort, 10) || 8888;
     await TcpTunnelModule.startTunnel(host.trim(), portNum, lp);
     setRunning(true);
     PluginManager.unregisterButton(100);
     PluginManager.registerButton(1, ['NOTE', 'DOC'], {
-      id: 100, name: 'TCP Tunnel', icon: iconOn, enable: true, expandButton: 0,
+      id: 100, name: s.title, icon: iconOn, enable: true, expandButton: 0,
     });
     log('toggle', 'startTunnel OK');
-    banner.show('Tunnel acceso ✓');
+    banner.show(s.bannerOn);
   }
 
   async function handleToggle() {
@@ -153,10 +178,10 @@ export default function App(): React.JSX.Element {
         setRunning(false);
         PluginManager.unregisterButton(100);
         PluginManager.registerButton(1, ['NOTE', 'DOC'], {
-          id: 100, name: 'TCP Tunnel', icon: iconOff, enable: true, expandButton: 0,
+          id: 100, name: s.title, icon: iconOff, enable: true, expandButton: 0,
         });
         log('toggle', 'stopTunnel OK');
-        banner.show('Tunnel spento');
+        banner.show(s.bannerOff);
       } else {
         const portNum = parseInt(port, 10);
         try {
@@ -164,7 +189,6 @@ export default function App(): React.JSX.Element {
         } catch (e: unknown) {
           const msg = e instanceof Error ? e.message : String(e);
           if (msg.includes('EADDRINUSE')) {
-            // Stale socket from a previous session — force-stop then retry once.
             log('toggle', 'EADDRINUSE — force-stopping stale socket and retrying...');
             try {
               await TcpTunnelModule.stopTunnel();
@@ -173,21 +197,18 @@ export default function App(): React.JSX.Element {
               const msg2 = e2 instanceof Error ? e2.message : String(e2);
               log('toggle', `retry FAILED: ${msg2}`);
               const lp2 = parseInt(listenPort, 10) || 8888;
-              Alert.alert(
-                'Porta occupata',
-                `La porta ${lp2} è occupata da un altro processo.\n\nProva a riavviare il Supernote per liberarla, poi ripremi AVVIA.\n\nIn alternativa cambia la "Porta ascolto" nelle Impostazioni.`,
-              );
+              Alert.alert(s.errPortBusy, s.errPortBusyMsg(lp2));
             }
           } else {
             log('toggle', `FAILED: ${msg}`);
-            Alert.alert('Errore avvio', msg);
+            Alert.alert(s.errStart, msg);
           }
         }
       }
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       log('toggle', `FAILED: ${msg}`);
-      Alert.alert('Errore', msg);
+      Alert.alert(s.errGeneric, msg);
     } finally {
       setLoading(false);
     }
@@ -196,35 +217,32 @@ export default function App(): React.JSX.Element {
   async function handleSave() {
     const trimmedHost = host.trim();
     if (!trimmedHost) {
-      Alert.alert('Host non valido', 'Il campo host non può essere vuoto.');
+      Alert.alert(s.errHostEmpty, s.errHostEmptyMsg);
       return;
     }
     const portNum = parseInt(port, 10);
     if (!isValidPort(portNum)) {
-      Alert.alert('Porta non valida', 'La porta deve essere tra 1 e 65535.');
+      Alert.alert(s.errPort, s.errPortMsg);
       return;
     }
     const listenPortNum = parseInt(listenPort, 10);
     if (!isValidPort(listenPortNum)) {
-      Alert.alert('Porta ascolto non valida', 'La porta ascolto deve essere tra 1 e 65535.');
+      Alert.alert(s.errListenPort, s.errListenPortMsg);
       return;
     }
     if (running) {
-      Alert.alert(
-        'Tunnel attivo',
-        'Le nuove impostazioni verranno usate al prossimo avvio.',
-      );
+      Alert.alert(s.errTunnelActive, s.errTunnelActiveMsg);
     }
     try {
       await TcpTunnelModule.saveConfig(trimmedHost, portNum, listenPortNum);
       log('save', `OK host=${trimmedHost} port=${portNum}`);
-      banner.show('Impostazioni salvate', () => {
+      banner.show(s.bannerSaved, () => {
         setViewMode('control');
         setScreen('control');
       });
     } catch (e: unknown) {
       log('save', `FAILED: ${String(e)}`);
-      Alert.alert('Errore', 'Impossibile salvare la configurazione.');
+      Alert.alert(s.errGeneric, s.errHostEmptyMsg);
     }
   }
 
@@ -232,7 +250,6 @@ export default function App(): React.JSX.Element {
 
   return (
     <View style={styles.root}>
-      {/* Banner */}
       {banner.text ? (
         <View style={styles.banner}>
           <Text style={styles.bannerText}>{banner.text}</Text>
@@ -241,6 +258,7 @@ export default function App(): React.JSX.Element {
 
       {screen === 'control' ? (
         <ControlScreen
+          s={s}
           running={running}
           loading={loading}
           targetPort={port}
@@ -251,6 +269,7 @@ export default function App(): React.JSX.Element {
         />
       ) : (
         <SettingsScreen
+          s={s}
           host={host}
           port={port}
           listenPort={listenPort}
@@ -270,7 +289,8 @@ export default function App(): React.JSX.Element {
 // Control screen
 // ---------------------------------------------------------------------------
 
-function ControlScreen({running, loading, targetPort, listenPort, onToggle, onSettings, onClose}: {
+function ControlScreen({s, running, loading, targetPort, listenPort, onToggle, onSettings, onClose}: {
+  s: Strings;
   running: boolean;
   loading: boolean;
   targetPort: string;
@@ -281,50 +301,46 @@ function ControlScreen({running, loading, targetPort, listenPort, onToggle, onSe
 }) {
   return (
     <View style={styles.screen}>
-      <Header title="TCP Tunnel" onClose={onClose} />
+      <Header title={s.title} onClose={onClose} />
 
       <View style={styles.body}>
-        {/* Status */}
         <View style={styles.statusRow}>
           <View style={[styles.dot, running ? styles.dotOn : styles.dotOff]} />
-          <Text style={styles.statusText}>{running ? 'ATTIVO' : 'INATTIVO'}</Text>
+          <Text style={styles.statusText}>{running ? s.active : s.inactive}</Text>
         </View>
 
-        {/* Toggle button */}
         <TouchableOpacity
           style={[styles.primaryBtn, loading && styles.primaryBtnDisabled]}
           onPress={onToggle}
           disabled={loading}>
           <Text style={styles.primaryBtnIcon}>{loading ? '…' : running ? '◼' : '▶'}</Text>
           <Text style={styles.primaryBtnText}>
-            {loading ? 'Attendi...' : running ? 'SPEGNI TUNNEL' : 'AVVIA TUNNEL'}
+            {loading ? s.loading : running ? s.stop : s.start}
           </Text>
         </TouchableOpacity>
 
-        {/* Settings row — immediately below toggle, list-style like Supernote */}
         <TouchableOpacity style={styles.listRow} onPress={onSettings}>
-          <Text style={styles.listRowText}>Impostazioni</Text>
+          <Text style={styles.listRowText}>{s.settings}</Text>
           <Text style={styles.listRowArrow}>›</Text>
         </TouchableOpacity>
 
-        {/* Prerequisite hint — shown only when inactive */}
-        {!running && (
-          <View style={styles.hintBox}>
-            <Text style={styles.hintText}>
-              Prima di avviare, attiva{'\n'}
-              <Text style={styles.hintBold}>Screen Mirroring</Text> o{' '}
-              <Text style={styles.hintBold}>File Access</Text>
-              {'\n'}dalla barra toggle in alto.
+        {running && (
+          <View style={styles.adbBox}>
+            <Text style={styles.adbLabel}>{s.pcCommand}</Text>
+            <Text style={styles.adbCommand}>
+              {'adb forward tcp:' + targetPort + ' tcp:' + listenPort}
             </Text>
           </View>
         )}
 
-        {/* ADB command — only when active */}
-        {running && (
-          <View style={styles.adbBox}>
-            <Text style={styles.adbLabel}>Comando PC</Text>
-            <Text style={styles.adbCommand}>
-              {'adb forward tcp:' + targetPort + ' tcp:' + listenPort}
+        {!running && (
+          <View style={styles.hintBox}>
+            <Text style={styles.hintText}>
+              {s.hintPre}{'\n'}
+              <Text style={styles.hintBold}>Screen Mirroring</Text>
+              {' '}{s.hintOr}{' '}
+              <Text style={styles.hintBold}>File Access</Text>
+              {'\n'}{s.hintSuf}
             </Text>
           </View>
         )}
@@ -342,7 +358,8 @@ const PRESETS = [
   {p: '8081', label: 'Browse & Access'},
 ] as const;
 
-function SettingsScreen({host, port, listenPort, onHostChange, onPortChange, onListenPortChange, onSave, onBack, onClose}: {
+function SettingsScreen({s, host, port, listenPort, onHostChange, onPortChange, onListenPortChange, onSave, onBack, onClose}: {
+  s: Strings;
   host: string;
   port: string;
   listenPort: string;
@@ -355,11 +372,10 @@ function SettingsScreen({host, port, listenPort, onHostChange, onPortChange, onL
 }) {
   return (
     <View style={styles.screen}>
-      <Header title="Impostazioni" onClose={onClose} onBack={onBack} />
+      <Header title={s.settingsTitle} onClose={onClose} backLabel={s.back} onBack={onBack} />
 
       <View style={styles.body}>
-        {/* Presets */}
-        <Text style={styles.fieldLabel}>Preset porta</Text>
+        <Text style={styles.fieldLabel}>{s.presetLabel}</Text>
         <View style={styles.presetRow}>
           {PRESETS.map(({p, label}) => (
             <TouchableOpacity
@@ -374,8 +390,7 @@ function SettingsScreen({host, port, listenPort, onHostChange, onPortChange, onL
 
         <View style={styles.divider} />
 
-        {/* Host */}
-        <Text style={styles.fieldLabel}>Host destinazione</Text>
+        <Text style={styles.fieldLabel}>{s.hostLabel}</Text>
         <TextInput
           style={styles.input}
           value={host}
@@ -386,8 +401,7 @@ function SettingsScreen({host, port, listenPort, onHostChange, onPortChange, onL
           placeholderTextColor="#888"
         />
 
-        {/* Target port */}
-        <Text style={styles.fieldLabel}>Porta destinazione (target)</Text>
+        <Text style={styles.fieldLabel}>{s.targetPortLabel}</Text>
         <TextInput
           style={styles.input}
           value={port}
@@ -399,21 +413,19 @@ function SettingsScreen({host, port, listenPort, onHostChange, onPortChange, onL
 
         <View style={styles.divider} />
 
-        {/* Listen port */}
-        <Text style={styles.fieldLabel}>Porta ascolto (device)</Text>
-        <Text style={styles.fieldHint}>Usata in: adb forward tcp:… tcp:{listenPort}</Text>
+        <Text style={styles.fieldLabel}>{s.listenPortLabel}</Text>
+        <Text style={styles.fieldHint}>{s.listenPortHint}{listenPort}</Text>
         <TextInput
           style={styles.input}
           value={listenPort}
           onChangeText={onListenPortChange}
           keyboardType="numeric"
-          placeholder="7890"
+          placeholder="8888"
           placeholderTextColor="#888"
         />
 
-        {/* Save */}
         <TouchableOpacity style={styles.primaryBtn} onPress={onSave}>
-          <Text style={styles.primaryBtnText}>SALVA</Text>
+          <Text style={styles.primaryBtnText}>{s.save}</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -421,13 +433,12 @@ function SettingsScreen({host, port, listenPort, onHostChange, onPortChange, onL
 }
 
 // ---------------------------------------------------------------------------
-// Styles — Supernote language: square, black/white, thin separators
+// Styles
 // ---------------------------------------------------------------------------
 
 const styles = StyleSheet.create({
   root: {flex: 1, backgroundColor: '#fff'},
 
-  // Banner
   banner: {
     backgroundColor: '#000',
     paddingVertical: 10,
@@ -438,7 +449,6 @@ const styles = StyleSheet.create({
 
   screen: {flex: 1},
 
-  // Header
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -469,10 +479,8 @@ const styles = StyleSheet.create({
   },
   backBoxText: {color: '#fff', fontSize: 14, fontWeight: '600'},
 
-  // Body
   body: {flex: 1, paddingHorizontal: 20, paddingTop: 20},
 
-  // Status
   statusRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -486,7 +494,6 @@ const styles = StyleSheet.create({
   dotOff: {backgroundColor: '#fff'},
   statusText: {fontSize: 16, fontWeight: '700', color: '#000'},
 
-  // Primary button — black, square, white text
   primaryBtn: {
     backgroundColor: '#000',
     paddingVertical: 16,
@@ -499,7 +506,6 @@ const styles = StyleSheet.create({
   primaryBtnIcon: {color: '#fff', fontSize: 14, marginRight: 10},
   primaryBtnText: {color: '#fff', fontSize: 15, fontWeight: '700', letterSpacing: 0.5},
 
-  // ADB box
   adbBox: {
     borderWidth: 1,
     borderColor: '#000',
@@ -509,9 +515,21 @@ const styles = StyleSheet.create({
   adbLabel: {fontSize: 11, color: '#555', marginBottom: 6, fontWeight: '600'},
   adbCommand: {fontFamily: 'monospace', fontSize: 13, color: '#000'},
 
-  // Prerequisite hint
+  listRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 18,
+    borderTopWidth: 1,
+    borderTopColor: '#ddd',
+    borderBottomWidth: 1,
+    borderBottomColor: '#ddd',
+    marginBottom: 20,
+  },
+  listRowText: {fontSize: 15, color: '#000'},
+  listRowArrow: {fontSize: 20, color: '#000'},
+
   hintBox: {
-    marginTop: 16,
     borderWidth: 1,
     borderColor: '#ddd',
     padding: 14,
@@ -519,20 +537,6 @@ const styles = StyleSheet.create({
   hintText: {fontSize: 13, color: '#555', lineHeight: 20},
   hintBold: {fontWeight: '700', color: '#000'},
 
-  // List row (settings link) — full width, bottom border
-  listRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 18,
-    borderTopWidth: 1,
-    borderTopColor: '#ddd',
-  },
-  listRowText: {fontSize: 15, color: '#000'},
-  listRowArrow: {fontSize: 20, color: '#000'},
-
-  // Settings fields
   divider: {height: 1, backgroundColor: '#ddd', marginVertical: 16},
   fieldLabel: {fontSize: 13, color: '#555', marginBottom: 4, fontWeight: '600'},
   fieldHint: {fontSize: 11, color: '#888', marginBottom: 8, fontFamily: 'monospace'},
@@ -546,7 +550,6 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
 
-  // Presets — square buttons
   presetRow: {flexDirection: 'row', gap: 12, marginBottom: 8},
   presetBtn: {
     flex: 1,
