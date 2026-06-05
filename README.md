@@ -64,6 +64,17 @@ The ADB command in the control panel updates automatically when you change ports
 
 ---
 
+## Language support
+
+The UI follows the Supernote system language automatically. Supported: **Italian** and
+**English** (fallback). No configuration needed — change the language in Supernote's
+settings and the plugin updates live.
+
+To add a language, extend the `translations` object in
+[`src/i18n.ts`](src/i18n.ts) and add the new locale code to the `Locale` type.
+
+---
+
 ## Troubleshooting
 
 **"Porta occupata" error on start**
