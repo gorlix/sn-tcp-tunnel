@@ -44,7 +44,7 @@ jobs:
         run: chmod +x buildPlugin.sh && ./buildPlugin.sh
 
       - name: Verify output
-        run: ls -lh build/outputs/snTCPTunnel.snplg
+        run: ls -lh build/outputs/sn-tcp-tunnel.snplg
 
       - name: Get tag annotation body
         id: tag_info
@@ -60,6 +60,6 @@ jobs:
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          files: build/outputs/snTCPTunnel.snplg
+          files: build/outputs/sn-tcp-tunnel.snplg
           body: ${{ steps.tag_info.outputs.body }}
           fail_on_unmatched_files: true

@@ -39,7 +39,7 @@ PowerShell window here*.
 ### Step 2 — Install the plugin on the Supernote
 
 1. Go to [**Releases**](../../releases/latest) on this page and download
-   `snTCPTunnel.snplg`
+   `sn-tcp-tunnel.snplg`
 2. Copy the file to your Supernote (via USB drag-and-drop, or the Supernote Partner App)
 3. On the Supernote, open **PluginHost** → tap **Install Plugin** → select the file
 4. A small **TCP Tunnel** button appears in the toolbar at the top of your notes
@@ -139,7 +139,7 @@ git clone https://github.com/gorlix/sn-tcp-tunnel
 cd sn-tcp-tunnel
 npm install
 ./buildPlugin.sh
-# Output: build/outputs/snTCPTunnel.snplg
+# Output: build/outputs/sn-tcp-tunnel.snplg
 ```
 
 To release: push a tag `v*` — GitHub Actions builds and attaches the `.snplg` file
