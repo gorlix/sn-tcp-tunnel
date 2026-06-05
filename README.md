@@ -1,70 +1,78 @@
 # sn-TCP-Tunnel
 
-View your Supernote's screen on your PC over USB — no WiFi needed.
+**Forward your Supernote's screen sharing over USB — no WiFi needed.**
 
-Supernote has a built-in screen sharing feature, but it only works over WiFi.
-This plugin bridges the gap: it forwards the screen sharing stream through the USB cable you already have plugged in.
+Supernote's built-in screen mirroring only works over WiFi. This plugin adds a TCP relay
+inside the device so the stream travels through the USB cable you already have plugged in.
 
----
-
-## How it works
-
-1. You plug the Supernote into your PC via USB
-2. Tap the **TCP Tunnel** button on the Supernote
-3. Run one command on your PC (`adb forward`)
-4. Open a browser and see your Supernote screen live
-
-The plugin acts as a relay: it picks up the screen sharing stream from inside the device and sends it over USB to your PC.
+**Source:** [github.com/gorlix/sn-tcp-tunnel](https://github.com/gorlix/sn-tcp-tunnel) |
+**Author:** [Gorlix](https://github.com/gorlix) |
+**Version:** 1.0.0
 
 ---
 
-## What you need
+## Requirements
 
-- A Supernote A5X or A6X with **PluginHost** installed
-- A PC with **ADB** installed ([download here](https://developer.android.com/tools/releases/platform-tools))
-- A USB cable
+| What | Where |
+| ---- | ----- |
+| Supernote A5X / A6X / Nomad with **PluginHost** | on device |
+| **ADB** (Android Debug Bridge) — [download](https://developer.android.com/tools/releases/platform-tools) | on PC |
+| USB cable | — |
 
-That's it — no WiFi, no Android Studio, no extra software.
-
----
-
-## Install the plugin
-
-1. Go to [Releases](../../releases) and download the latest `plugin.snplg`
-2. Copy it to your Supernote (USB or WiFi transfer)
-3. On the Supernote, open **PluginHost** → **Install Plugin** → select the file
-4. Two new buttons appear in the toolbar: **TCP Tunnel** and **Tunnel Config**
+No WiFi. No Android Studio. No extra apps.
 
 ---
 
-## Use it
+## Install
 
-**Every time you want to view the screen:**
+1. Download `snTCPTunnel.snplg` from [Releases](../../releases/latest)
+2. Copy it to the Supernote (USB or WiFi transfer)
+3. On the Supernote: **PluginHost → Install Plugin → select the file**
+4. A **TCP Tunnel** button appears in the toolbar
 
-1. Plug Supernote into your PC via USB
-2. Tap **TCP Tunnel** on the Supernote — the icon becomes solid (relay is active)
-3. On your PC, run:
+---
+
+## Usage
+
+1. Plug the Supernote into your PC via USB
+2. Tap **TCP Tunnel** in the toolbar — the control panel opens
+3. Tap **AVVIA TUNNEL** — the dot turns solid (relay active)
+4. On your PC, run the command shown in the control panel:
 
    ```sh
    adb forward tcp:8080 tcp:8888
    ```
 
-4. Open `http://localhost:8080` in your browser
+5. Open `http://localhost:8080` in your browser — your screen appears live
 
-To stop: tap the button again, or just unplug the cable.
+To stop: tap **SPEGNI TUNNEL** or simply unplug the cable.
 
 ---
 
-## Change the target host or port
+## Configuration
 
-The default configuration points to `100.113.43.44:8080` (the Supernote screen sharing address on Tailscale).
-If your setup is different:
+Tap **Impostazioni ›** in the control panel, or open Supernote's plugin settings and
+tap the gear icon next to the plugin.
 
-1. Tap **Tunnel Config** in the toolbar
-2. Enter the target host and port
-3. Tap **Save**
+| Setting | Default | Notes |
+| ------- | ------- | ----- |
+| Host destinazione | `100.113.43.44` | Target TCP host (e.g. Tailscale IP) |
+| Porta destinazione | `8080` | Presets: Screen Mirroring (8080), Browse & Access (8081) |
+| Porta ascolto (device) | `8888` | Local port the relay binds on the Supernote |
 
-The screen also shows your device's current WiFi IP for reference.
+The ADB command in the control panel updates automatically when you change ports.
+
+---
+
+## Troubleshooting
+
+**"Porta occupata" error on start**
+Port 8888 is held by a stale process (usually after a crash or a previous socat session).
+Reboot the Supernote to clear it. Alternatively, change the *Porta ascolto* in Settings.
+
+**EADDRINUSE after reinstall**
+The plugin auto-retries once by force-stopping the previous socket. If it still fails,
+reboot.
 
 ---
 
@@ -75,39 +83,33 @@ The screen also shows your device's current WiFi IP for reference.
 
 - Node.js 18+
 - JDK 21
+- Android SDK (Platform 35, Build-Tools 35.0.0)
 
 ```bash
 # Arch Linux
 sudo pacman -S jdk21-openjdk
 export JAVA_HOME=/usr/lib/jvm/java-21-openjdk
 
-# Android command-line tools (no Android Studio needed)
-# Download from https://developer.android.com/studio#command-tools
-# Then install SDK Platform 35 + Build-Tools 35.0.0:
+# Android SDK (no Android Studio needed)
+# Download command-line tools from https://developer.android.com/studio#command-tools
 sdkmanager "platforms;android-35" "build-tools;35.0.0"
 
 export ANDROID_HOME=$HOME/Android/Sdk
-export PATH=$PATH:$ANDROID_HOME/platform-tools
+echo "sdk.dir=$HOME/Android/Sdk" > android/local.properties
 ```
 
 </details>
 
 ```bash
+git clone https://github.com/gorlix/sn-tcp-tunnel
+cd sn-tcp-tunnel
 npm install
-chmod +x buildPlugin.sh && ./buildPlugin.sh
-# Output: build/outputs/plugin.snplg
+./buildPlugin.sh
+# Output: build/outputs/snTCPTunnel.snplg
 ```
-
-To publish a release, push a version tag:
-
-```bash
-git tag v1.0.0 && git push origin v1.0.0
-```
-
-GitHub Actions builds the plugin and attaches it to the release automatically.
 
 ---
 
 ## License
 
-MIT
+MIT © [Gorlix](https://github.com/gorlix)

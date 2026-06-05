@@ -1,10 +1,12 @@
 {
   "name": "snTCPTunnel",
-  "desc": "",
+  "desc": "Forward Supernote screen sharing over USB — no WiFi needed. Acts as a TCP relay between the USB cable and any TCP endpoint, configurable host and port.",
   "iconPath": "",
-  "versionName": "0.0.1",
+  "versionName": "1.0.0",
   "versionCode": "1",
   "pluginID": "53bvhixp038hu67m",
   "pluginKey": "snTCPTunnel",
-  "jsMainPath": "index"
+  "jsMainPath": "index",
+  "author": "Gorlix",
+  "homepage": "https://github.com/gorlix/sn-tcp-tunnel"
 }
