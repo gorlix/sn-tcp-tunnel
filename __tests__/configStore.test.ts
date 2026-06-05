@@ -1,4 +1,5 @@
 import {NativeModules} from 'react-native';
+import {isValidPort} from '../src/validation';
 
 const mockLoadConfig = jest.fn();
 const mockSaveConfig = jest.fn();
@@ -25,6 +26,7 @@ describe('config store', () => {
     jest.clearAllMocks();
   });
 
+  // These tests verify the JS↔native contract shape, not the native implementation.
   it('loadConfig returns defaults when no saved config', async () => {
     mockLoadConfig.mockResolvedValue({host: '100.113.43.44', port: 8080});
     const cfg = await NativeModules.TcpTunnelModule.loadConfig();
@@ -63,6 +65,3 @@ describe('config store', () => {
   });
 });
 
-function isValidPort(p: number): boolean {
-  return !isNaN(p) && p > 0 && p <= 65535;
-}
