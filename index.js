@@ -2,20 +2,16 @@
  * @file index.js
  * @description Plugin entry point for sn-TCP-Tunnel.
  *
- * Responsibilities:
- *  - Register the main toggle button (id=100) in the sidebar.
- *  - On button press: open the App.tsx control panel via showPluginView().
- *    The panel handles start/stop and updates the icon itself.
- *  - On USB disconnect: stop the tunnel automatically.
- *
- * All tunnel logic (start/stop, icon swap, Toast) lives in App.tsx so
- * the user has a single place to interact with the plugin.
+ * - Sidebar button (id=100): open App.tsx in control mode (start/stop panel).
+ * - Config button (gear in plugin settings): open App.tsx in settings mode (host/port form).
+ * - USB disconnect: stop tunnel without user interaction.
  */
 
 import {AppRegistry, Image, NativeModules, NativeEventEmitter} from 'react-native';
 import App from './App';
 import {name as appName} from './app.json';
 import {PluginManager} from 'sn-plugin-lib';
+import {setViewMode} from './src/viewMode';
 
 AppRegistry.registerComponent(appName, () => App);
 
@@ -48,20 +44,30 @@ function registerMainButton(icon) {
 }
 
 // ---------------------------------------------------------------------------
-// Button click — open control panel
+// Button listeners
 // ---------------------------------------------------------------------------
 
 PluginManager.registerButtonListener({
   onButtonPress: event => {
     log('button', `Button pressed: id=${event.id}`);
     if (event.id === 100) {
+      setViewMode('control');
       PluginManager.showPluginView();
     }
   },
 });
 
+/** Config button (gear icon in Supernote plugin settings panel). */
+PluginManager.registerConfigButtonListener({
+  onClick: () => {
+    log('button', 'Config button pressed — opening settings view');
+    setViewMode('settings');
+    PluginManager.showPluginView();
+  },
+});
+
 // ---------------------------------------------------------------------------
-// USB disconnect — stop tunnel without user interaction
+// USB disconnect — stop tunnel without UI
 // ---------------------------------------------------------------------------
 
 emitter.addListener('onUsbDisconnect', () => {
@@ -75,6 +81,7 @@ emitter.addListener('onUsbDisconnect', () => {
 // Initial registration
 // ---------------------------------------------------------------------------
 
-log('init', 'Registering main button...');
+log('init', 'Registering buttons...');
 registerMainButton(iconOff);
+PluginManager.registerConfigButton();
 log('init', 'Plugin ready');

@@ -1,18 +1,16 @@
 /**
  * Tests for index.js plugin entry point.
  *
- * index.js now only:
- *  - Registers the main sidebar button
- *  - On button press: calls PluginManager.showPluginView()
- *  - On USB disconnect: calls TcpTunnelModule.stopTunnel()
- *
- * Tunnel start/stop logic lives in App.tsx (tested separately).
+ * - Sidebar button (100): setViewMode('control') + showPluginView()
+ * - Config button: setViewMode('settings') + showPluginView()
+ * - USB disconnect: stopTunnel()
  */
 
 const mockStopTunnel = jest.fn().mockResolvedValue(null);
 const mockUnregisterButton = jest.fn();
 const mockRegisterButton = jest.fn();
 const mockRegisterButtonListener = jest.fn();
+const mockRegisterConfigButtonListener = jest.fn();
 const mockShowPluginView = jest.fn();
 
 const eventListeners: Record<string, ((...args: unknown[]) => void)[]> = {};
@@ -21,12 +19,19 @@ const flush = () => new Promise(r => setTimeout(r, 20));
 
 jest.mock('../App', () => 'MockApp');
 
+jest.mock('../src/viewMode', () => ({
+  setViewMode: jest.fn(),
+  getViewMode: jest.fn(() => 'control'),
+}));
+
 jest.mock('sn-plugin-lib', () => ({
   PluginManager: {
     init: jest.fn(),
     registerButton: mockRegisterButton,
     unregisterButton: mockUnregisterButton,
     registerButtonListener: mockRegisterButtonListener,
+    registerConfigButtonListener: mockRegisterConfigButtonListener,
+    registerConfigButton: jest.fn().mockResolvedValue(true),
     showPluginView: mockShowPluginView,
     closePluginView: jest.fn(),
   },
@@ -35,7 +40,6 @@ jest.mock('sn-plugin-lib', () => ({
 jest.mock('react-native', () => ({
   AppRegistry: {registerComponent: jest.fn()},
   Image: {resolveAssetSource: jest.fn(() => ({uri: 'mock://icon'}))},
-  ToastAndroid: {show: jest.fn(), showWithGravity: jest.fn(), SHORT: 2000, TOP: 48},
   NativeModules: {
     TcpTunnelModule: {
       stopTunnel: (...args: unknown[]) => mockStopTunnel(...args),
@@ -46,9 +50,7 @@ jest.mock('react-native', () => ({
   },
   NativeEventEmitter: jest.fn().mockImplementation(() => ({
     addListener: (event: string, cb: (...args: unknown[]) => void) => {
-      if (!eventListeners[event]) {
-        eventListeners[event] = [];
-      }
+      if (!eventListeners[event]) {eventListeners[event] = [];}
       eventListeners[event].push(cb);
       return {remove: jest.fn()};
     },
@@ -57,16 +59,16 @@ jest.mock('react-native', () => ({
 
 require('../index.js');
 
-// Capture startup state before beforeEach clears mocks.
+const {setViewMode} = require('../src/viewMode');
+
 const startupRegisterCall = mockRegisterButton.mock.calls[0] as unknown[];
 
 const buttonListener = mockRegisterButtonListener.mock.calls[0]?.[0] as {
   onButtonPress: (event: {id: number; name: string}) => void;
 };
-
-function pressButton(id: number) {
-  buttonListener.onButtonPress({id, name: ''});
-}
+const configListener = mockRegisterConfigButtonListener.mock.calls[0]?.[0] as {
+  onClick: () => void;
+};
 
 describe('index.js entry point', () => {
   beforeEach(() => {
@@ -82,17 +84,24 @@ describe('index.js entry point', () => {
     ]);
   });
 
-  it('button 100 press → showPluginView()', () => {
-    pressButton(100);
+  it('button 100 → setViewMode(control) + showPluginView()', () => {
+    buttonListener.onButtonPress({id: 100, name: 'TCP Tunnel'});
+    expect(setViewMode).toHaveBeenCalledWith('control');
     expect(mockShowPluginView).toHaveBeenCalled();
   });
 
-  it('unknown button press → no showPluginView()', () => {
-    pressButton(999);
+  it('config button → setViewMode(settings) + showPluginView()', () => {
+    configListener.onClick();
+    expect(setViewMode).toHaveBeenCalledWith('settings');
+    expect(mockShowPluginView).toHaveBeenCalled();
+  });
+
+  it('unknown button → no showPluginView()', () => {
+    buttonListener.onButtonPress({id: 999, name: ''});
     expect(mockShowPluginView).not.toHaveBeenCalled();
   });
 
-  it('onUsbDisconnect → calls stopTunnel()', async () => {
+  it('onUsbDisconnect → stopTunnel()', async () => {
     eventListeners.onUsbDisconnect?.forEach(cb => cb());
     await flush();
     expect(mockStopTunnel).toHaveBeenCalled();
