@@ -12,6 +12,7 @@
 import React, {useEffect, useRef, useState} from 'react';
 import {
   Alert,
+  DeviceEventEmitter,
   Image,
   NativeModules,
   StyleSheet,
@@ -115,21 +116,21 @@ export default function App(): React.JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Reset screen to the correct mode every time the plugin view becomes visible.
-  // The App component stays mounted between opens in the PluginHost; without this
-  // listener, the screen state from the previous open would persist.
+  // Reset screen every time index.js calls showPluginView().
+  // index.js emits 'tunnelViewMode' just after showPluginView() — both run in the
+  // same JS runtime so this event arrives while the component is still mounted.
+  // PluginLifeListener.onStart() does NOT fire on each showPluginView() call,
+  // only on plugin JS initialisation, so DeviceEventEmitter is used instead.
   useEffect(() => {
-    const sub = PluginManager.addPluginLifeListener({
-      onStart: () => {
-        const mode = getViewMode();
-        log('lifecycle', `onStart — screen → ${mode}`);
+    const sub = DeviceEventEmitter.addListener(
+      'tunnelViewMode',
+      (mode: 'control' | 'settings') => {
+        log('event', `tunnelViewMode → ${mode}`);
         setScreen(mode);
         loadState();
       },
-      onStop: () => log('lifecycle', 'onStop'),
-    });
+    );
     return () => sub.remove();
-
   }, []);
 
   async function startTunnel(portNum: number) {

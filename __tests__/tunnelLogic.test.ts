@@ -37,8 +37,11 @@ jest.mock('sn-plugin-lib', () => ({
   },
 }));
 
+const mockEmit = jest.fn();
+
 jest.mock('react-native', () => ({
   AppRegistry: {registerComponent: jest.fn()},
+  DeviceEventEmitter: {emit: mockEmit, addListener: jest.fn(() => ({remove: jest.fn()}))},
   Image: {resolveAssetSource: jest.fn(() => ({uri: 'mock://icon'}))},
   NativeModules: {
     TcpTunnelModule: {
@@ -84,16 +87,18 @@ describe('index.js entry point', () => {
     ]);
   });
 
-  it('button 100 → setViewMode(control) + showPluginView()', () => {
+  it('button 100 → setViewMode(control) + showPluginView() + emit(control)', () => {
     buttonListener.onButtonPress({id: 100, name: 'TCP Tunnel'});
     expect(setViewMode).toHaveBeenCalledWith('control');
     expect(mockShowPluginView).toHaveBeenCalled();
+    expect(mockEmit).toHaveBeenCalledWith('tunnelViewMode', 'control');
   });
 
-  it('config button → setViewMode(settings) + showPluginView()', () => {
+  it('config button → setViewMode(settings) + showPluginView() + emit(settings)', () => {
     configListener.onClick();
     expect(setViewMode).toHaveBeenCalledWith('settings');
     expect(mockShowPluginView).toHaveBeenCalled();
+    expect(mockEmit).toHaveBeenCalledWith('tunnelViewMode', 'settings');
   });
 
   it('unknown button → no showPluginView()', () => {

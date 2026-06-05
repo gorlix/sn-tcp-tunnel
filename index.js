@@ -7,7 +7,7 @@
  * - USB disconnect: stop tunnel without user interaction.
  */
 
-import {AppRegistry, Image, NativeModules, NativeEventEmitter} from 'react-native';
+import {AppRegistry, DeviceEventEmitter, Image, NativeModules, NativeEventEmitter} from 'react-native';
 import App from './App';
 import {name as appName} from './app.json';
 import {PluginManager} from 'sn-plugin-lib';
@@ -53,6 +53,7 @@ PluginManager.registerButtonListener({
     if (event.id === 100) {
       setViewMode('control');
       PluginManager.showPluginView();
+      DeviceEventEmitter.emit('tunnelViewMode', 'control');
     }
   },
 });
@@ -63,6 +64,7 @@ PluginManager.registerConfigButtonListener({
     log('button', 'Config button pressed — opening settings view');
     setViewMode('settings');
     PluginManager.showPluginView();
+    DeviceEventEmitter.emit('tunnelViewMode', 'settings');
   },
 });
 
