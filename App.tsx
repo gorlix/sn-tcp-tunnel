@@ -17,6 +17,7 @@ import {
   DeviceEventEmitter,
   Image,
   NativeModules,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -395,23 +396,8 @@ function SettingsScreen({s, host, port, listenPort, autoHost, onHostChange, onPo
     <View style={styles.screen}>
       <Header title={s.settingsTitle} onClose={onClose} backLabel={s.back} onBack={onBack} />
 
-      <View style={styles.body}>
-        <Text style={styles.fieldLabel}>{s.presetLabel}</Text>
-        <View style={styles.presetRow}>
-          {PRESETS.map(({p, label}) => (
-            <TouchableOpacity
-              key={p}
-              style={[styles.presetBtn, port === p && styles.presetBtnActive]}
-              onPress={() => onPortChange(p)}>
-              <Text style={[styles.presetPort, port === p && styles.presetPortActive]}>{p}</Text>
-              <Text style={[styles.presetLabel, port === p && styles.presetLabelActive]}>{label}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        <View style={styles.divider} />
-
-        {/* Auto-host toggle — custom (Switch not reliable on Supernote e-ink) */}
+      <ScrollView style={styles.body} contentContainerStyle={styles.bodyContent}>
+        {/* Auto-host toggle — at top for visibility */}
         <View style={styles.toggleRow}>
           <View style={styles.toggleLabelCol}>
             <Text style={styles.fieldLabel}>{s.autoHostLabel}</Text>
@@ -442,6 +428,21 @@ function SettingsScreen({s, host, port, listenPort, autoHost, onHostChange, onPo
           </>
         )}
 
+        <View style={styles.divider} />
+
+        <Text style={styles.fieldLabel}>{s.presetLabel}</Text>
+        <View style={styles.presetRow}>
+          {PRESETS.map(({p, label}) => (
+            <TouchableOpacity
+              key={p}
+              style={[styles.presetBtn, port === p && styles.presetBtnActive]}
+              onPress={() => onPortChange(p)}>
+              <Text style={[styles.presetPort, port === p && styles.presetPortActive]}>{p}</Text>
+              <Text style={[styles.presetLabel, port === p && styles.presetLabelActive]}>{label}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
         <Text style={styles.fieldLabel}>{s.targetPortLabel}</Text>
         <TextInput
           style={styles.input}
@@ -468,7 +469,7 @@ function SettingsScreen({s, host, port, listenPort, autoHost, onHostChange, onPo
         <TouchableOpacity style={styles.primaryBtn} onPress={onSave}>
           <Text style={styles.primaryBtnText}>{s.save}</Text>
         </TouchableOpacity>
-      </View>
+      </ScrollView>
     </View>
   );
 }
@@ -520,7 +521,8 @@ const styles = StyleSheet.create({
   },
   backBoxText: {color: '#fff', fontSize: 14, fontWeight: '600'},
 
-  body: {flex: 1, paddingHorizontal: 20, paddingTop: 20},
+  body: {flex: 1},
+  bodyContent: {paddingHorizontal: 20, paddingTop: 20, paddingBottom: 40},
 
   statusRow: {
     flexDirection: 'row',
