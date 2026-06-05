@@ -3,8 +3,9 @@
  * @description Plugin entry point for the sn-TCP-Tunnel Supernote plugin.
  *
  * Responsibilities:
- *  - Register the main toggle button (id=100) and the config button (id=200)
- *    with PluginManager on startup.
+ *  - Register the main toggle button (id=100) in the sidebar via registerButton(type=1).
+ *  - Register the config button via registerConfigButton() so it appears in the
+ *    plugin settings panel.
  *  - Implement the activate/deactivate state machine that starts and stops
  *    the native TCP relay via TcpTunnelModule.
  *  - Swap the toolbar icon between icon_off and icon_on to reflect relay state.
@@ -14,9 +15,13 @@
  * State machine:
  *  INACTIVE ──[button press]──► ACTIVE ──[button press / USB disconnect]──► INACTIVE
  *
- * Note: button re-registration (unregister + register with new icon) is the
- * mechanism provided by sn-plugin-lib to update a toolbar button's icon at runtime.
- * There is no separate "update icon" API.
+ * Button API notes (sn-plugin-lib):
+ *  - registerButton(type, appTypes, button): type 1=sidebar, 2=lasso, 3=doc selection
+ *  - registerConfigButton(): registers the settings/gear button in the plugin panel
+ *  - Button clicks arrive via registerButtonListener({ onButtonPress(event) })
+ *  - Config button clicks via registerConfigButtonListener({ onClick() })
+ *  - Icon swap = unregisterButton(id) + registerButton(...) with new icon
+ *  - PluginButton.enable must be true for the button to be interactive
  */
 
 import {AppRegistry, Image, NativeModules, NativeEventEmitter} from 'react-native';
@@ -31,12 +36,9 @@ PluginManager.init();
 const {TcpTunnelModule} = NativeModules;
 
 /**
- * Fire-and-forget logger that writes to both console and the native log file.
- * Uses the writeLog ReactMethod added to TcpTunnelModule so all JS events
- * appear in the same MYSTYLE/plugins/snTCPTunnel.log as native events.
- *
- * @param {string} tag   Short category label (e.g. 'activate', 'USB').
- * @param {string} msg   Human-readable message.
+ * Fire-and-forget logger. Writes to the native log file + logcat tag snTCPTunnel.
+ * @param {string} tag  Short category label.
+ * @param {string} msg  Human-readable message.
  */
 function log(tag, msg) {
   const line = `[${new Date().toISOString()}] [${tag}] ${msg}`;
@@ -44,9 +46,8 @@ function log(tag, msg) {
 }
 
 /**
- * NativeEventEmitter instance bound to TcpTunnelModule.
- * Used to receive the "onUsbDisconnect" event emitted by the Kotlin BroadcastReceiver
- * when android.hardware.usb.action.USB_STATE reports connected=false.
+ * NativeEventEmitter bound to TcpTunnelModule.
+ * Receives "onUsbDisconnect" from the Kotlin BroadcastReceiver.
  */
 const emitter = new NativeEventEmitter(TcpTunnelModule);
 
@@ -60,15 +61,14 @@ const iconOn = Image.resolveAssetSource(require('./assets/icon/icon_on.png')).ur
 
 /**
  * Whether the TCP relay is currently active.
- * Kept as module-level state because PluginManager has no query API for button state.
+ * Set optimistically before any await to prevent double-tap re-entry.
  */
 let active = false;
 
 /**
- * Registers (or re-registers) the main toggle button with the given icon URI.
- *
- * Called on startup with iconOff and after each state transition to swap the icon.
- * Re-registration requires a preceding unregisterButton(100) call to avoid duplicates.
+ * Registers (or re-registers) the main sidebar toggle button.
+ * enable:true is required — default is false (disabled/greyed out).
+ * Re-registration requires a preceding unregisterButton(100) call.
  *
  * @param {string} icon - Resolved asset URI for the button icon.
  */
@@ -77,20 +77,8 @@ function registerMainButton(icon) {
     id: 100,
     name: 'TCP Tunnel',
     icon,
-    showType: 0,
-  });
-}
-
-/**
- * Registers the config button that opens the App.tsx configuration view.
- * Called once on startup; the icon is static (always iconOff).
- */
-function registerConfigButton() {
-  PluginManager.registerButton(2, ['NOTE', 'DOC'], {
-    id: 200,
-    name: 'Tunnel Config',
-    icon: iconOff,
-    showType: 1,
+    enable: true,
+    expandButton: 0,
   });
 }
 
@@ -100,11 +88,10 @@ function registerConfigButton() {
  * Sequence:
  *  1. Set active=true immediately to block re-entry on rapid double-tap.
  *  2. Load persisted host/port configuration from native storage.
- *  3. Call TcpTunnelModule.startTunnel — binds the ServerSocket and posts notification.
+ *  3. Call TcpTunnelModule.startTunnel.
  *  4. Swap the toolbar icon to iconOn.
  *
- * On error: active is reverted to false and the error is logged. The icon is not
- * swapped so the user can retry.
+ * On error: active is reverted to false.
  *
  * @returns {Promise<void>}
  */
@@ -133,11 +120,10 @@ async function activate() {
  *
  * Sequence:
  *  1. Set active=false immediately to block re-entry on rapid double-tap.
- *  2. Call TcpTunnelModule.stopTunnel — closes the ServerSocket, shuts down threads,
- *     dismisses the notification, and unregisters the USB BroadcastReceiver.
+ *  2. Call TcpTunnelModule.stopTunnel.
  *  3. Swap the toolbar icon back to iconOff.
  *
- * On error: active is reverted to true and the error is logged.
+ * On error: active is reverted to true.
  *
  * @returns {Promise<void>}
  */
@@ -163,23 +149,31 @@ async function deactivate() {
 // ---------------------------------------------------------------------------
 
 /**
- * Main toggle button (id=100): activates or deactivates the relay based on current state.
+ * Main sidebar button (id=100): toggle relay on/off.
+ * Clicks arrive via onButtonPress(event) where event.id identifies the button.
  */
-PluginManager.onButtonClick(100, () => {
-  log('button', `Button 100 pressed — current active=${active}`);
-  if (active) {
-    deactivate();
-  } else {
-    activate();
-  }
+PluginManager.registerButtonListener({
+  onButtonPress: event => {
+    log('button', `Button pressed: id=${event.id} name=${event.name}`);
+    if (event.id === 100) {
+      if (active) {
+        deactivate();
+      } else {
+        activate();
+      }
+    }
+  },
 });
 
 /**
- * Config button (id=200): opens the App.tsx configuration view inside the plugin pane.
+ * Config button (gear icon in plugin settings panel): opens the App.tsx
+ * configuration view. Registered separately via registerConfigButton().
  */
-PluginManager.onButtonClick(200, () => {
-  log('button', 'Button 200 pressed — opening config view');
-  PluginManager.openPluginView();
+PluginManager.registerConfigButtonListener({
+  onClick: () => {
+    log('button', 'Config button pressed — showing plugin view');
+    PluginManager.showPluginView();
+  },
 });
 
 // ---------------------------------------------------------------------------
@@ -188,9 +182,8 @@ PluginManager.onButtonClick(200, () => {
 
 /**
  * When the USB cable is removed while the relay is active, the Kotlin BroadcastReceiver
- * emits "onUsbDisconnect". The relay is stopped here rather than in Kotlin to keep
- * the teardown path identical to a manual button press and to allow JS-level tests
- * to cover this code path without a physical device.
+ * emits "onUsbDisconnect". The relay is stopped here (not in Kotlin) so the teardown
+ * path is identical to a manual button press and testable without a physical device.
  */
 emitter.addListener('onUsbDisconnect', () => {
   log('USB', `onUsbDisconnect event received — active=${active}`);
@@ -208,5 +201,5 @@ emitter.addListener('onUsbDisconnect', () => {
 
 log('init', 'Registering buttons...');
 registerMainButton(iconOff);
-registerConfigButton();
+PluginManager.registerConfigButton();
 log('init', 'Buttons registered — plugin ready');
