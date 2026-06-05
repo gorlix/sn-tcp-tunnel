@@ -126,6 +126,15 @@ class TcpTunnelModule(private val ctx: ReactApplicationContext) : ReactContextBa
             promise.resolve(null)
             return
         }
+        // Close any stale socket left from a previous session (e.g. after a crash or
+        // PluginHost reload without stopTunnel being called).
+        serverSocket?.let {
+            TunnelLogger.i(TAG, "Closing stale serverSocket before new bind")
+            try { it.close() } catch (_: Exception) {}
+        }
+        serverSocket = null
+        executor?.shutdownNow()
+        executor = null
         try {
             TunnelLogger.i(TAG, "Binding ServerSocket on port $listenPort...")
             val ss = ServerSocket(listenPort)

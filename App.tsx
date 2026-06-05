@@ -107,6 +107,17 @@ export default function App(): React.JSX.Element {
     }).catch((e: unknown) => log('mount', `init failed: ${String(e)}`));
   }, [initialScreen]);
 
+  async function startTunnel(portNum: number) {
+    await TcpTunnelModule.startTunnel(host.trim(), portNum, LISTEN_PORT);
+    setRunning(true);
+    PluginManager.unregisterButton(100);
+    PluginManager.registerButton(1, ['NOTE', 'DOC'], {
+      id: 100, name: 'TCP Tunnel', icon: iconOn, enable: true, expandButton: 0,
+    });
+    log('toggle', 'startTunnel OK');
+    banner.show('Tunnel acceso ✓');
+  }
+
   async function handleToggle() {
     setLoading(true);
     try {
@@ -121,14 +132,29 @@ export default function App(): React.JSX.Element {
         banner.show('Tunnel spento');
       } else {
         const portNum = parseInt(port, 10);
-        await TcpTunnelModule.startTunnel(host.trim(), portNum, LISTEN_PORT);
-        setRunning(true);
-        PluginManager.unregisterButton(100);
-        PluginManager.registerButton(1, ['NOTE', 'DOC'], {
-          id: 100, name: 'TCP Tunnel', icon: iconOn, enable: true, expandButton: 0,
-        });
-        log('toggle', 'startTunnel OK');
-        banner.show('Tunnel acceso ✓');
+        try {
+          await startTunnel(portNum);
+        } catch (e: unknown) {
+          const msg = e instanceof Error ? e.message : String(e);
+          if (msg.includes('EADDRINUSE')) {
+            // Stale socket from a previous session — force-stop then retry once.
+            log('toggle', 'EADDRINUSE — force-stopping stale socket and retrying...');
+            try {
+              await TcpTunnelModule.stopTunnel();
+              await startTunnel(portNum);
+            } catch (e2: unknown) {
+              const msg2 = e2 instanceof Error ? e2.message : String(e2);
+              log('toggle', `retry FAILED: ${msg2}`);
+              Alert.alert(
+                'Porta occupata',
+                `La porta ${LISTEN_PORT} è occupata da un altro processo. Chiudilo e riprova.`,
+              );
+            }
+          } else {
+            log('toggle', `FAILED: ${msg}`);
+            Alert.alert('Errore avvio', msg);
+          }
+        }
       }
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -238,6 +264,12 @@ function ControlScreen({running, loading, targetPort, onToggle, onSettings, onCl
           </Text>
         </TouchableOpacity>
 
+        {/* Settings row — immediately below toggle, list-style like Supernote */}
+        <TouchableOpacity style={styles.listRow} onPress={onSettings}>
+          <Text style={styles.listRowText}>Impostazioni</Text>
+          <Text style={styles.listRowArrow}>›</Text>
+        </TouchableOpacity>
+
         {/* ADB command — only when active */}
         {running && (
           <View style={styles.adbBox}>
@@ -248,12 +280,6 @@ function ControlScreen({running, loading, targetPort, onToggle, onSettings, onCl
           </View>
         )}
       </View>
-
-      {/* Settings row — list-style like Supernote */}
-      <TouchableOpacity style={styles.listRow} onPress={onSettings}>
-        <Text style={styles.listRowText}>Impostazioni</Text>
-        <Text style={styles.listRowArrow}>›</Text>
-      </TouchableOpacity>
     </View>
   );
 }
