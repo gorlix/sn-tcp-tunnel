@@ -72,6 +72,7 @@ class TcpTunnelModule(private val ctx: ReactApplicationContext) : ReactContextBa
         private const val DEFAULT_HOST = "100.113.43.44"
         private const val DEFAULT_PORT = 8080
         private const val DEFAULT_LISTEN_PORT = 8888
+        private const val DEFAULT_AUTO_HOST = true
         private const val TAG = "TcpTunnelModule"
     }
 
@@ -215,13 +216,14 @@ class TcpTunnelModule(private val ctx: ReactApplicationContext) : ReactContextBa
      * Persists the tunnel target configuration to internal storage.
      */
     @ReactMethod
-    fun saveConfig(host: String, port: Int, listenPort: Int, promise: Promise) {
-        TunnelLogger.i(TAG, "saveConfig called: host=$host port=$port listenPort=$listenPort")
+    fun saveConfig(host: String, port: Int, listenPort: Int, autoHost: Boolean, promise: Promise) {
+        TunnelLogger.i(TAG, "saveConfig called: host=$host port=$port listenPort=$listenPort autoHost=$autoHost")
         try {
             val json = JSONObject().apply {
                 put("host", host)
                 put("port", port)
                 put("listenPort", listenPort)
+                put("autoHost", autoHost)
             }
             val f = File(ctx.filesDir, CONFIG_FILE)
             f.writeText(json.toString())
@@ -253,11 +255,13 @@ class TcpTunnelModule(private val ctx: ReactApplicationContext) : ReactContextBa
             val host = json.optString("host", DEFAULT_HOST)
             val port = json.optInt("port", DEFAULT_PORT)
             val listenPort = json.optInt("listenPort", DEFAULT_LISTEN_PORT)
-            TunnelLogger.i(TAG, "loadConfig result: host=$host port=$port listenPort=$listenPort")
+            val autoHost = json.optBoolean("autoHost", DEFAULT_AUTO_HOST)
+            TunnelLogger.i(TAG, "loadConfig result: host=$host port=$port listenPort=$listenPort autoHost=$autoHost")
             val map = Arguments.createMap().apply {
                 putString("host", host)
                 putInt("port", port)
                 putInt("listenPort", listenPort)
+                putBoolean("autoHost", autoHost)
             }
             promise.resolve(map)
         } catch (e: Exception) {

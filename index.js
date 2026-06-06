@@ -14,6 +14,7 @@ import {PluginManager} from 'sn-plugin-lib';
 import {setViewMode} from './src/viewMode';
 
 AppRegistry.registerComponent(appName, () => App);
+console.log('[sn-tcp-tunnel] AppRegistry registered component:', appName);
 
 PluginManager.init();
 

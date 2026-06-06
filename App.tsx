@@ -17,6 +17,7 @@ import {
   DeviceEventEmitter,
   Image,
   NativeModules,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -97,6 +98,7 @@ function Header({title, onClose, backLabel, onBack}: {
 // ---------------------------------------------------------------------------
 
 export default function App(): React.JSX.Element {
+  console.log('[sn-tcp-tunnel] App component rendering');
   const initialScreen = getViewMode();
   const [screen, setScreen] = useState<'control' | 'settings'>(initialScreen);
   const [locale, setLocale] = useState<Locale>(getCurrentLocale);
@@ -105,20 +107,29 @@ export default function App(): React.JSX.Element {
   const [host, setHost] = useState('');
   const [port, setPort] = useState('');
   const [listenPort, setListenPort] = useState(DEFAULT_LISTEN_PORT);
+  const [autoHost, setAutoHost] = useState(true);
+  const [wifiIP, setWifiIP] = useState('');
   const banner = useBanner();
 
   const s: Strings = getStrings(locale);
 
   function loadState() {
+    TcpTunnelModule.getWifiIP()
+      .then((ip: string) => {
+        log('state', `wifiIP=${ip}`);
+        setWifiIP(ip && ip !== '0.0.0.0' ? ip : '');
+      })
+      .catch(() => setWifiIP(''));
     Promise.all([
       TcpTunnelModule.isRunning(),
       TcpTunnelModule.loadConfig(),
-    ]).then(([r, cfg]: [boolean, {host: string; port: number; listenPort: number}]) => {
-      log('state', `isRunning=${r} host=${cfg.host} port=${cfg.port} listenPort=${cfg.listenPort}`);
+    ]).then(([r, cfg]: [boolean, {host: string; port: number; listenPort: number; autoHost: boolean}]) => {
+      log('state', `isRunning=${r} host=${cfg.host} port=${cfg.port} listenPort=${cfg.listenPort} autoHost=${cfg.autoHost}`);
       setRunning(r);
       setHost(cfg.host);
       setPort(String(cfg.port));
       setListenPort(String(cfg.listenPort ?? 8888));
+      setAutoHost(cfg.autoHost ?? true);
     }).catch((e: unknown) => log('state', `load failed: ${String(e)}`));
   }
 
@@ -158,9 +169,23 @@ export default function App(): React.JSX.Element {
   // Handlers
   // ---------------------------------------------------------------------------
 
+  async function resolveTargetHost(): Promise<string> {
+    if (!autoHost) {return host.trim();}
+    try {
+      const wifiIP: string = await TcpTunnelModule.getWifiIP();
+      if (wifiIP && wifiIP !== '0.0.0.0') {
+        log('host', `Auto-host resolved: ${wifiIP}`);
+        return wifiIP;
+      }
+    } catch (_) {}
+    log('host', 'Auto-host fallback: 127.0.0.1');
+    return '127.0.0.1';
+  }
+
   async function startTunnel(portNum: number) {
     const lp = parseInt(listenPort, 10) || 8888;
-    await TcpTunnelModule.startTunnel(host.trim(), portNum, lp);
+    const targetHost = await resolveTargetHost();
+    await TcpTunnelModule.startTunnel(targetHost, portNum, lp);
     setRunning(true);
     PluginManager.unregisterButton(100);
     PluginManager.registerButton(1, ['NOTE', 'DOC'], {
@@ -216,7 +241,7 @@ export default function App(): React.JSX.Element {
 
   async function handleSave() {
     const trimmedHost = host.trim();
-    if (!trimmedHost) {
+    if (!autoHost && !trimmedHost) {
       Alert.alert(s.errHostEmpty, s.errHostEmptyMsg);
       return;
     }
@@ -234,8 +259,8 @@ export default function App(): React.JSX.Element {
       Alert.alert(s.errTunnelActive, s.errTunnelActiveMsg);
     }
     try {
-      await TcpTunnelModule.saveConfig(trimmedHost, portNum, listenPortNum);
-      log('save', `OK host=${trimmedHost} port=${portNum}`);
+      await TcpTunnelModule.saveConfig(trimmedHost, portNum, listenPortNum, autoHost);
+      log('save', `OK host=${trimmedHost} port=${portNum} autoHost=${autoHost}`);
       banner.show(s.bannerSaved, () => {
         setViewMode('control');
         setScreen('control');
@@ -263,6 +288,8 @@ export default function App(): React.JSX.Element {
           loading={loading}
           targetPort={port}
           listenPort={listenPort}
+          autoHost={autoHost}
+          wifiIP={wifiIP}
           onToggle={handleToggle}
           onSettings={() => { setViewMode('settings'); setScreen('settings'); }}
           onClose={close}
@@ -273,9 +300,12 @@ export default function App(): React.JSX.Element {
           host={host}
           port={port}
           listenPort={listenPort}
+          autoHost={autoHost}
+          wifiIP={wifiIP}
           onHostChange={setHost}
           onPortChange={setPort}
           onListenPortChange={setListenPort}
+          onAutoHostChange={setAutoHost}
           onSave={handleSave}
           onBack={() => { setViewMode('control'); setScreen('control'); }}
           onClose={close}
@@ -289,12 +319,14 @@ export default function App(): React.JSX.Element {
 // Control screen
 // ---------------------------------------------------------------------------
 
-function ControlScreen({s, running, loading, targetPort, listenPort, onToggle, onSettings, onClose}: {
+function ControlScreen({s, running, loading, targetPort, listenPort, autoHost, wifiIP, onToggle, onSettings, onClose}: {
   s: Strings;
   running: boolean;
   loading: boolean;
   targetPort: string;
   listenPort: string;
+  autoHost: boolean;
+  wifiIP: string;
   onToggle: () => void;
   onSettings: () => void;
   onClose: () => void;
@@ -303,11 +335,19 @@ function ControlScreen({s, running, loading, targetPort, listenPort, onToggle, o
     <View style={styles.screen}>
       <Header title={s.title} onClose={onClose} />
 
-      <View style={styles.body}>
+      <View style={styles.bodyContent}>
         <View style={styles.statusRow}>
           <View style={[styles.dot, running ? styles.dotOn : styles.dotOff]} />
           <Text style={styles.statusText}>{running ? s.active : s.inactive}</Text>
         </View>
+
+        {/* Detected IP — shown when auto-host is on */}
+        {autoHost && wifiIP ? (
+          <View style={styles.ipBox}>
+            <Text style={styles.ipLabel}>{s.detectedIP}</Text>
+            <Text style={styles.ipValue}>{wifiIP}</Text>
+          </View>
+        ) : null}
 
         <TouchableOpacity
           style={[styles.primaryBtn, loading && styles.primaryBtnDisabled]}
@@ -358,14 +398,17 @@ const PRESETS = [
   {p: '8081', label: 'Browse & Access'},
 ] as const;
 
-function SettingsScreen({s, host, port, listenPort, onHostChange, onPortChange, onListenPortChange, onSave, onBack, onClose}: {
+function SettingsScreen({s, host, port, listenPort, autoHost, wifiIP, onHostChange, onPortChange, onListenPortChange, onAutoHostChange, onSave, onBack, onClose}: {
   s: Strings;
   host: string;
   port: string;
   listenPort: string;
+  autoHost: boolean;
+  wifiIP: string;
   onHostChange: (v: string) => void;
   onPortChange: (v: string) => void;
   onListenPortChange: (v: string) => void;
+  onAutoHostChange: (v: boolean) => void;
   onSave: () => void;
   onBack: () => void;
   onClose: () => void;
@@ -374,7 +417,48 @@ function SettingsScreen({s, host, port, listenPort, onHostChange, onPortChange, 
     <View style={styles.screen}>
       <Header title={s.settingsTitle} onClose={onClose} backLabel={s.back} onBack={onBack} />
 
-      <View style={styles.body}>
+      <ScrollView style={styles.body} contentContainerStyle={styles.bodyContent}>
+        {/* Auto-host toggle — at top for visibility */}
+        <View style={styles.toggleRow}>
+          <View style={styles.toggleLabelCol}>
+            <Text style={styles.fieldLabel}>{s.autoHostLabel}</Text>
+            <Text style={styles.fieldHint}>{s.autoHostHint}</Text>
+          </View>
+          <TouchableOpacity
+            style={[styles.toggleBtn, autoHost && styles.toggleBtnOn]}
+            onPress={() => onAutoHostChange(!autoHost)}>
+            <Text style={[styles.toggleBtnText, autoHost && styles.toggleBtnTextOn]}>
+              {autoHost ? 'ON' : 'OFF'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Detected IP — shown when auto-host is on */}
+        {autoHost && wifiIP ? (
+          <View style={styles.ipBox}>
+            <Text style={styles.ipLabel}>{s.detectedIP}</Text>
+            <Text style={styles.ipValue}>{wifiIP}</Text>
+          </View>
+        ) : null}
+
+        {/* Manual host — visible only when auto-host is OFF */}
+        {!autoHost && (
+          <>
+            <Text style={styles.fieldLabel}>{s.hostLabel}</Text>
+            <TextInput
+              style={styles.input}
+              value={host}
+              onChangeText={onHostChange}
+              autoCapitalize="none"
+              autoCorrect={false}
+              placeholder="100.113.43.44"
+              placeholderTextColor="#888"
+            />
+          </>
+        )}
+
+        <View style={styles.divider} />
+
         <Text style={styles.fieldLabel}>{s.presetLabel}</Text>
         <View style={styles.presetRow}>
           {PRESETS.map(({p, label}) => (
@@ -387,19 +471,6 @@ function SettingsScreen({s, host, port, listenPort, onHostChange, onPortChange, 
             </TouchableOpacity>
           ))}
         </View>
-
-        <View style={styles.divider} />
-
-        <Text style={styles.fieldLabel}>{s.hostLabel}</Text>
-        <TextInput
-          style={styles.input}
-          value={host}
-          onChangeText={onHostChange}
-          autoCapitalize="none"
-          autoCorrect={false}
-          placeholder="100.113.43.44"
-          placeholderTextColor="#888"
-        />
 
         <Text style={styles.fieldLabel}>{s.targetPortLabel}</Text>
         <TextInput
@@ -427,7 +498,7 @@ function SettingsScreen({s, host, port, listenPort, onHostChange, onPortChange, 
         <TouchableOpacity style={styles.primaryBtn} onPress={onSave}>
           <Text style={styles.primaryBtnText}>{s.save}</Text>
         </TouchableOpacity>
-      </View>
+      </ScrollView>
     </View>
   );
 }
@@ -447,7 +518,7 @@ const styles = StyleSheet.create({
   },
   bannerText: {color: '#fff', fontSize: 14, fontWeight: '600'},
 
-  screen: {flex: 1},
+  screen: {flex: 1, backgroundColor: '#fff'},
 
   header: {
     flexDirection: 'row',
@@ -479,7 +550,8 @@ const styles = StyleSheet.create({
   },
   backBoxText: {color: '#fff', fontSize: 14, fontWeight: '600'},
 
-  body: {flex: 1, paddingHorizontal: 20, paddingTop: 20},
+  body: {flex: 1},
+  bodyContent: {paddingHorizontal: 20, paddingTop: 20, paddingBottom: 40},
 
   statusRow: {
     flexDirection: 'row',
@@ -515,6 +587,19 @@ const styles = StyleSheet.create({
   adbLabel: {fontSize: 11, color: '#555', marginBottom: 6, fontWeight: '600'},
   adbCommand: {fontFamily: 'monospace', fontSize: 13, color: '#000'},
 
+  ipBox: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#000',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 20,
+  },
+  ipLabel: {fontSize: 12, color: '#555', fontWeight: '600'},
+  ipValue: {fontFamily: 'monospace', fontSize: 15, fontWeight: '700', color: '#000'},
+
   listRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -538,6 +623,26 @@ const styles = StyleSheet.create({
   hintBold: {fontWeight: '700', color: '#000'},
 
   divider: {height: 1, backgroundColor: '#ddd', marginVertical: 16},
+  toggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+    marginBottom: 12,
+  },
+  toggleLabelCol: {flex: 1, marginRight: 12},
+  toggleBtn: {
+    width: 64,
+    height: 32,
+    borderWidth: 1,
+    borderColor: '#000',
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  toggleBtnOn: {backgroundColor: '#000'},
+  toggleBtnText: {fontSize: 12, fontWeight: '700', color: '#000'},
+  toggleBtnTextOn: {color: '#fff'},
   fieldLabel: {fontSize: 13, color: '#555', marginBottom: 4, fontWeight: '600'},
   fieldHint: {fontSize: 11, color: '#888', marginBottom: 8, fontFamily: 'monospace'},
   input: {
