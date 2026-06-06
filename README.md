@@ -76,6 +76,11 @@ other browser tab.
 
 **To stop:** tap *SPEGNI TUNNEL* (Stop Tunnel), or just unplug the cable.
 
+> **File Transfer (port 8089) also works.** The Supernote's official *File Transfer*
+> service is tunneled too — set the **Port** to `8089` in Settings and it goes through.
+> Not entirely sure what it's for end-to-end (the device is already plugged into the PC
+> over USB), but the tunnel does carry it correctly.
+
 ---
 
 ## Settings
@@ -85,7 +90,7 @@ Tap **Impostazioni ›** (Settings) in the control panel to change the connectio
 | Setting | Default | When to change |
 | ------- | ------- | -------------- |
 | Host | `100.113.43.44` | If you use a different Tailscale or local network address |
-| Port | `8080` | *Screen Mirroring* = 8080, *Browse & Access* = 8081 |
+| Port | `8080` | *Screen Mirroring* = 8080, *File Transfer* = 8089 |
 | Listen port | `8888` | Only if another app conflicts on port 8888 |
 
 The command shown in the app always reflects the current settings — just copy and run it.

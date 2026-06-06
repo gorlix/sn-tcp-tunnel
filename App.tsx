@@ -395,7 +395,7 @@ function ControlScreen({s, running, loading, targetPort, listenPort, autoHost, w
 
 const PRESETS = [
   {p: '8080', label: 'Screen Mirroring'},
-  {p: '8081', label: 'Browse & Access'},
+  {p: '8089', label: 'File Transfer'},
 ] as const;
 
 function SettingsScreen({s, host, port, listenPort, autoHost, wifiIP, onHostChange, onPortChange, onListenPortChange, onAutoHostChange, onSave, onBack, onClose}: {
