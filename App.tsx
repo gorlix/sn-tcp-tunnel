@@ -108,11 +108,18 @@ export default function App(): React.JSX.Element {
   const [port, setPort] = useState('');
   const [listenPort, setListenPort] = useState(DEFAULT_LISTEN_PORT);
   const [autoHost, setAutoHost] = useState(true);
+  const [wifiIP, setWifiIP] = useState('');
   const banner = useBanner();
 
   const s: Strings = getStrings(locale);
 
   function loadState() {
+    TcpTunnelModule.getWifiIP()
+      .then((ip: string) => {
+        log('state', `wifiIP=${ip}`);
+        setWifiIP(ip && ip !== '0.0.0.0' ? ip : '');
+      })
+      .catch(() => setWifiIP(''));
     Promise.all([
       TcpTunnelModule.isRunning(),
       TcpTunnelModule.loadConfig(),
@@ -281,6 +288,8 @@ export default function App(): React.JSX.Element {
           loading={loading}
           targetPort={port}
           listenPort={listenPort}
+          autoHost={autoHost}
+          wifiIP={wifiIP}
           onToggle={handleToggle}
           onSettings={() => { setViewMode('settings'); setScreen('settings'); }}
           onClose={close}
@@ -292,6 +301,7 @@ export default function App(): React.JSX.Element {
           port={port}
           listenPort={listenPort}
           autoHost={autoHost}
+          wifiIP={wifiIP}
           onHostChange={setHost}
           onPortChange={setPort}
           onListenPortChange={setListenPort}
@@ -309,12 +319,14 @@ export default function App(): React.JSX.Element {
 // Control screen
 // ---------------------------------------------------------------------------
 
-function ControlScreen({s, running, loading, targetPort, listenPort, onToggle, onSettings, onClose}: {
+function ControlScreen({s, running, loading, targetPort, listenPort, autoHost, wifiIP, onToggle, onSettings, onClose}: {
   s: Strings;
   running: boolean;
   loading: boolean;
   targetPort: string;
   listenPort: string;
+  autoHost: boolean;
+  wifiIP: string;
   onToggle: () => void;
   onSettings: () => void;
   onClose: () => void;
@@ -323,11 +335,19 @@ function ControlScreen({s, running, loading, targetPort, listenPort, onToggle, o
     <View style={styles.screen}>
       <Header title={s.title} onClose={onClose} />
 
-      <View style={styles.body}>
+      <View style={styles.bodyContent}>
         <View style={styles.statusRow}>
           <View style={[styles.dot, running ? styles.dotOn : styles.dotOff]} />
           <Text style={styles.statusText}>{running ? s.active : s.inactive}</Text>
         </View>
+
+        {/* Detected IP — shown when auto-host is on */}
+        {autoHost && wifiIP ? (
+          <View style={styles.ipBox}>
+            <Text style={styles.ipLabel}>{s.detectedIP}</Text>
+            <Text style={styles.ipValue}>{wifiIP}</Text>
+          </View>
+        ) : null}
 
         <TouchableOpacity
           style={[styles.primaryBtn, loading && styles.primaryBtnDisabled]}
@@ -378,12 +398,13 @@ const PRESETS = [
   {p: '8081', label: 'Browse & Access'},
 ] as const;
 
-function SettingsScreen({s, host, port, listenPort, autoHost, onHostChange, onPortChange, onListenPortChange, onAutoHostChange, onSave, onBack, onClose}: {
+function SettingsScreen({s, host, port, listenPort, autoHost, wifiIP, onHostChange, onPortChange, onListenPortChange, onAutoHostChange, onSave, onBack, onClose}: {
   s: Strings;
   host: string;
   port: string;
   listenPort: string;
   autoHost: boolean;
+  wifiIP: string;
   onHostChange: (v: string) => void;
   onPortChange: (v: string) => void;
   onListenPortChange: (v: string) => void;
@@ -411,6 +432,14 @@ function SettingsScreen({s, host, port, listenPort, autoHost, onHostChange, onPo
             </Text>
           </TouchableOpacity>
         </View>
+
+        {/* Detected IP — shown when auto-host is on */}
+        {autoHost && wifiIP ? (
+          <View style={styles.ipBox}>
+            <Text style={styles.ipLabel}>{s.detectedIP}</Text>
+            <Text style={styles.ipValue}>{wifiIP}</Text>
+          </View>
+        ) : null}
 
         {/* Manual host — visible only when auto-host is OFF */}
         {!autoHost && (
@@ -557,6 +586,19 @@ const styles = StyleSheet.create({
   },
   adbLabel: {fontSize: 11, color: '#555', marginBottom: 6, fontWeight: '600'},
   adbCommand: {fontFamily: 'monospace', fontSize: 13, color: '#000'},
+
+  ipBox: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#000',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 20,
+  },
+  ipLabel: {fontSize: 12, color: '#555', fontWeight: '600'},
+  ipValue: {fontFamily: 'monospace', fontSize: 15, fontWeight: '700', color: '#000'},
 
   listRow: {
     flexDirection: 'row',
