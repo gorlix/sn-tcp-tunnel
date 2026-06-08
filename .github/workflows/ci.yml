@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [main]
 
+# Least-privilege default token for all jobs (they only read the repo)
+permissions:
+  contents: read
+
 jobs:
   lint-test:
     runs-on: ubuntu-latest
