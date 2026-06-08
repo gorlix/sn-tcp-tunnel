@@ -1,0 +1,89 @@
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly, mirrors the previous default-setup cadence
+    - cron: "0 3 * * 1"
+
+# Least-privilege default; jobs that upload results widen as needed
+permissions:
+  contents: read
+
+jobs:
+  # Interpreted / no-build languages: fast, build-mode none
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [actions, javascript-typescript, ruby]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"
+
+  # Android native (Kotlin) requires a real build for CodeQL to trace it.
+  # Mirrors the android-unit-test job in ci.yml.
+  analyze-android:
+    name: Analyze (java-kotlin)
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: 21
+          distribution: temurin
+
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: >-
+            platforms;android-36
+            build-tools;36.1.0
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: java-kotlin
+          build-mode: manual
+
+      - name: Write android/local.properties
+        run: echo "sdk.dir=$ANDROID_HOME" > android/local.properties
+
+      - name: Install JS dependencies
+        run: npm ci
+
+      - name: Build Android (debug)
+        run: cd android && ./gradlew assembleDebug --console=plain
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:java-kotlin"
