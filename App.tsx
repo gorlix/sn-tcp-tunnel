@@ -153,6 +153,15 @@ export default function App(): React.JSX.Element {
     return () => sub.remove();
   }, []);
 
+  // Tunnel stopped externally (e.g. USB disconnect) — sync UI state.
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener('tunnelStopped', () => {
+      log('event', 'tunnelStopped → setRunning(false)');
+      setRunning(false);
+    });
+    return () => sub.remove();
+  }, []);
+
   // Update locale when Supernote system language changes.
   useEffect(() => {
     const sub = PluginManager.registerLangListener({

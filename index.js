@@ -77,7 +77,12 @@ emitter.addListener('onUsbDisconnect', () => {
   log('USB', 'USB disconnected — stopping tunnel');
   TcpTunnelModule.stopTunnel()
     .then(() => log('USB', 'stopTunnel SUCCESS after USB disconnect'))
-    .catch(e => log('USB', `stopTunnel error: ${e?.message ?? e}`));
+    .catch(e => log('USB', `stopTunnel error: ${e?.message ?? e}`))
+    .finally(() => {
+      // Tunnel is down — reset sidebar icon and notify App (if mounted).
+      registerMainButton(iconOff);
+      DeviceEventEmitter.emit('tunnelStopped');
+    });
 });
 
 // ---------------------------------------------------------------------------
